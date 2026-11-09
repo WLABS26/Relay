@@ -1,0 +1,31 @@
+{
+  "name": "@relay/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./migrate": "./src/migrate.ts",
+    "./admin": "./src/admin.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "migrate": "tsx src/cli/migrate.ts",
+    "reset": "tsx src/cli/reset.ts",
+    "types:generate": "tsx src/cli/generate-types.ts",
+    "types:check": "tsx src/cli/generate-types.ts --check"
+  },
+  "dependencies": {
+    "@relay/config": "workspace:*",
+    "@relay/domain": "workspace:*",
+    "graphile-worker": "0.18.0",
+    "kysely": "0.29.8",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "kysely-codegen": "0.20.0",
+    "tsx": "4.23.15"
+  }
+}

@@ -1,0 +1,81 @@
+# Relay local development infrastructure.
+#
+#   pnpm infra:up      # docker compose -f infra/compose.yaml up -d --wait
+#
+# Starts PostgreSQL (with separate migrator / app / worker roles) and a private
+# S3-compatible object store (Versity S3 Gateway), then provisions the dev bucket
+# with versioning and CORS. All credentials below are LOCAL DEVELOPMENT ONLY and
+# are rejected by the production config validator.
+#
+# Images are pinned by digest for deterministic startup.
+name: relay
+
+services:
+  postgres:
+    # PostgreSQL 16.6 (supported until Nov 2028). See docs/architecture/decisions.md (ADR-006).
+    image: postgres:16.6-alpine@sha256:1d04b9ba1d4996401f2552b51beda8187f175c0645c091e4781134fc9c9a3eef
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${RELAY_PG_SUPERUSER_PASSWORD:-relay-dev-superuser}
+      POSTGRES_DB: postgres
+      RELAY_MIGRATOR_PASSWORD: ${RELAY_MIGRATOR_PASSWORD:-relay-dev-migrator}
+      RELAY_APP_PASSWORD: ${RELAY_APP_PASSWORD:-relay-dev-app}
+      RELAY_WORKER_PASSWORD: ${RELAY_WORKER_PASSWORD:-relay-dev-worker}
+    ports:
+      - '127.0.0.1:${RELAY_PG_PORT:-5432}:5432'
+    volumes:
+      - relay-pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    command: ['postgres', '-c', 'max_connections=200', '-c', 'log_min_duration_statement=1000']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d relay -h 127.0.0.1']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 5s
+
+  s3:
+    # Versity S3 Gateway v1.10.0 (POSIX backend, versioning enabled). MinIO images were not
+    # pullable from this environment; see ADR-004. Any S3-compatible store works.
+    image: versity/versitygw@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        mkdir -p /data/objects /data/versions &&
+        exec versitygw --port :7070 --health /health
+        posix --versioning-dir /data/versions /data/objects
+    environment:
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-relay-dev-access}
+      ROOT_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-relay-dev-secret-key}
+    ports:
+      - '127.0.0.1:${RELAY_S3_PORT:-7070}:7070'
+    volumes:
+      - relay-s3data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:7070/health']
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
+  s3-provision:
+    # One-shot: create the private dev bucket, enable versioning, apply CORS for the web origin.
+    image: amazon/aws-cli:2.27.0@sha256:e3e329e1d2894b7b4bbb0aacacd0a155262159b2e7a3b4275eb1f24046d3e06c
+    depends_on:
+      s3:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '/provision/provision.sh']
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-relay-dev-access}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-relay-dev-secret-key}
+      AWS_DEFAULT_REGION: us-east-1
+      S3_ENDPOINT: http://s3:7070
+      S3_BUCKETS: ${S3_BUCKET:-relay-media-dev}
+      S3_CORS_ORIGINS: ${S3_CORS_ORIGINS:-http://localhost:3000 http://127.0.0.1:3000}
+    volumes:
+      - ./s3:/provision:ro
+    restart: 'no'
+
+volumes:
+  relay-pgdata:
+  relay-s3data:

@@ -1,0 +1,177 @@
+/*
+ * Relay Design System v1.1 — Neutral Edition tokens.
+ *
+ * STAND-IN: Relay_Design_System.zip (relay-tokens.css, guide, marks/) was not supplied with
+ * this build. These tokens are derived from the specified palette values (Ink, Graphite,
+ * Silver, Sand, Ivory, Porcelain), the 4 px grid, the 8/16/24 px corner tokens and the
+ * 44 px target rule. Replace this file with design/relay/relay-tokens.css from the kit; keep
+ * the semantic token names below (or map them) so components keep working.
+ *
+ * Status tones are restrained additions (not part of the neutral palette) used only with an
+ * icon and a text label, never as the sole signal. All text pairs meet WCAG 2.1 AA.
+ */
+
+:root {
+  /* Palette (specified) */
+  --relay-ink: #141414;
+  --relay-graphite: #2b2b2a;
+  --relay-silver: #c4c5c3;
+  --relay-sand: #d9cebe;
+  --relay-ivory: #f5f2ec;
+  --relay-porcelain: #fdfcf9;
+
+  /* Derived neutrals */
+  --relay-stone-600: #5c5c59; /* muted text on light: 6.6:1 on porcelain */
+  --relay-stone-300: #dedcd6;
+  --relay-stone-800: #3a3a38;
+  --relay-stone-700: #4a4a48;
+
+  /* Spacing: 4 px grid */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Corners */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  /* Targets */
+  --target-min: 44px;
+
+  /* Typography: system sans, tabular numbers for times and metrics */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 32px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --tracking-tight: -0.01em;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout */
+  --content-max: 1200px;
+  --sidebar-width: 248px;
+}
+
+/* ----- Light theme (default) ---------------------------------------------------------- */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-bg: var(--relay-porcelain);
+  --color-surface: var(--relay-ivory);
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #efebe3;
+  --color-border: var(--relay-silver);
+  --color-border-subtle: var(--relay-stone-300);
+  --color-text: var(--relay-ink);
+  --color-text-secondary: var(--relay-graphite);
+  --color-text-muted: var(--relay-stone-600);
+  --color-accent: var(--relay-sand);
+  --color-accent-strong: #b9aa92;
+  --color-primary: var(--relay-ink);
+  --color-primary-text: var(--relay-porcelain);
+  --color-primary-hover: var(--relay-graphite);
+  --color-focus: var(--relay-ink);
+  --color-rule: rgba(20, 20, 20, 0.07);
+  --shadow-raised: 0 1px 2px rgba(20, 20, 20, 0.06), 0 4px 16px rgba(20, 20, 20, 0.06);
+  --shadow-dialog: 0 12px 48px rgba(20, 20, 20, 0.22);
+
+  --tone-success: #2f6b45;
+  --tone-success-bg: #e6efe8;
+  --tone-warning: #7a4f00;
+  --tone-warning-bg: #f6ecd8;
+  --tone-danger: #a23b33;
+  --tone-danger-bg: #f6e3e1;
+  --tone-info: #2e5a7a;
+  --tone-info-bg: #e3ebf2;
+  --tone-neutral: var(--relay-graphite);
+  --tone-neutral-bg: var(--relay-ivory);
+}
+
+/* ----- Dark theme ------------------------------------------------------------------------ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --color-bg: var(--relay-ink);
+    --color-surface: #1d1d1c;
+    --color-surface-raised: var(--relay-graphite);
+    --color-surface-sunken: #101010;
+    --color-border: var(--relay-stone-700);
+    --color-border-subtle: var(--relay-stone-800);
+    --color-text: var(--relay-porcelain);
+    --color-text-secondary: var(--relay-ivory);
+    --color-text-muted: var(--relay-silver);
+    --color-accent: var(--relay-sand);
+    --color-accent-strong: var(--relay-sand);
+    --color-primary: var(--relay-porcelain);
+    --color-primary-text: var(--relay-ink);
+    --color-primary-hover: var(--relay-ivory);
+    --color-focus: var(--relay-porcelain);
+    --color-rule: rgba(253, 252, 249, 0.06);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-dialog: 0 12px 48px rgba(0, 0, 0, 0.6);
+    --tone-success: #8fd1a6;
+    --tone-success-bg: #1d2b22;
+    --tone-warning: #e8bf6a;
+    --tone-warning-bg: #2e2617;
+    --tone-danger: #f29c93;
+    --tone-danger-bg: #331d1b;
+    --tone-info: #9cc3e0;
+    --tone-info-bg: #1b2631;
+    --tone-neutral: var(--relay-silver);
+    --tone-neutral-bg: #232322;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: var(--relay-ink);
+  --color-surface: #1d1d1c;
+  --color-surface-raised: var(--relay-graphite);
+  --color-surface-sunken: #101010;
+  --color-border: var(--relay-stone-700);
+  --color-border-subtle: var(--relay-stone-800);
+  --color-text: var(--relay-porcelain);
+  --color-text-secondary: var(--relay-ivory);
+  --color-text-muted: var(--relay-silver);
+  --color-accent: var(--relay-sand);
+  --color-accent-strong: var(--relay-sand);
+  --color-primary: var(--relay-porcelain);
+  --color-primary-text: var(--relay-ink);
+  --color-primary-hover: var(--relay-ivory);
+  --color-focus: var(--relay-porcelain);
+  --color-rule: rgba(253, 252, 249, 0.06);
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-dialog: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --tone-success: #8fd1a6;
+  --tone-success-bg: #1d2b22;
+  --tone-warning: #e8bf6a;
+  --tone-warning-bg: #2e2617;
+  --tone-danger: #f29c93;
+  --tone-danger-bg: #331d1b;
+  --tone-info: #9cc3e0;
+  --tone-info-bg: #1b2631;
+  --tone-neutral: var(--relay-silver);
+  --tone-neutral-bg: #232322;
+}

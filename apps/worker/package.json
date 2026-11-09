@@ -1,0 +1,27 @@
+{
+  "name": "@relay/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "node dist/main.js",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@relay/config": "workspace:*",
+    "@relay/db": "workspace:*",
+    "@relay/domain": "workspace:*",
+    "@relay/media": "workspace:*",
+    "@relay/providers": "workspace:*",
+    "@relay/services": "workspace:*",
+    "graphile-worker": "0.18.0",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "@types/pg": "8.23.1"
+  }
+}

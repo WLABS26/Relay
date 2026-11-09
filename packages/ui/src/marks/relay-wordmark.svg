@@ -1,0 +1,6 @@
+<!-- STAND-IN wordmark: replace with the custom Relay wordmark from the design kit (not supplied). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 32" role="img" aria-label="Relay">
+  <rect width="32" height="32" rx="8" fill="#C4C5C3"/>
+  <path d="M11 24V8h6.5a4.5 4.5 0 0 1 0 9H11m5.5 0L22 24" fill="none" stroke="#141414" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="42" y="22.5" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="19" font-weight="600" letter-spacing="-0.3" fill="#141414">Relay</text>
+</svg>

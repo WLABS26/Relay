@@ -1,0 +1,22 @@
+{
+  "name": "@relay/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@relay/config": "workspace:*",
+    "@relay/db": "workspace:*",
+    "@relay/domain": "workspace:*",
+    "@relay/media": "workspace:*",
+    "@relay/providers": "workspace:*",
+    "@relay/services": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "vitest": "4.1.12"
+  }
+}

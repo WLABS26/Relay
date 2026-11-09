@@ -1,0 +1,33 @@
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Local environment and secrets — never commit real credentials.
+.env
+.env.*
+!.env.example
+
+# Generated synthetic media fixtures (regenerate with `pnpm fixtures:generate`).
+fixtures/media/
+!fixtures/media/.gitkeep
+
+# Test output
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+.scratch/
+
+# Local tool caches
+.impeccable/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
