@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test';
 import { signIn, signOut, workspaceId } from './helpers';
 
 test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', () => {
-  test('a member of one workspace cannot see or mutate another workspace', async ({ page }) => {
+  test('a member of one workspace cannot see or mutate another workspace', async ({
+    page,
+    baseURL,
+  }) => {
+    const origin = new URL(baseURL!).origin;
     await signIn(page, 'Mara Lindqvist');
     const fernhill = await workspaceId(page, 'fernhill');
     const posts = (await (
@@ -44,7 +48,7 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
     // Mutations across tenants are refused the same way.
     const csrf = (await page.context().cookies()).find((c) => c.name === 'relay_csrf')!.value;
     const patch = await page.request.patch(`/api/v1/workspaces/${kestrel}/posts/${fernhillPost}`, {
-      headers: { 'x-csrf-token': csrf, origin: 'http://localhost:3100' },
+      headers: { 'x-csrf-token': csrf, origin },
       data: { expectedVersion: 1, caption: 'hijack', mediaAssetIds: [fernhillAsset] },
     });
     expect(patch.status()).toBe(404);
@@ -53,13 +57,14 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
     expect((await page.request.get(tampered)).status()).toBe(403);
   });
 
-  test('mutations require same-origin and a valid CSRF token', async ({ page }) => {
+  test('mutations require same-origin and a valid CSRF token', async ({ page, baseURL }) => {
+    const origin = new URL(baseURL!).origin;
     await signIn(page, 'Mara Lindqvist');
     const ws = await workspaceId(page, 'fernhill');
     const csrf = (await page.context().cookies()).find((c) => c.name === 'relay_csrf')!.value;
     const body = { name: 'Should not exist', timezone: 'Europe/Berlin' };
     const noToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, {
-      headers: { origin: 'http://localhost:3100' },
+      headers: { origin },
       data: body,
     });
     expect(noToken.status()).toBe(403);
@@ -70,7 +75,7 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
     });
     expect(crossSite.status()).toBe(403);
     const wrongToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, {
-      headers: { origin: 'http://localhost:3100', 'x-csrf-token': 'forged' },
+      headers: { origin, 'x-csrf-token': 'forged' },
       data: body,
     });
     expect(wrongToken.status()).toBe(403);

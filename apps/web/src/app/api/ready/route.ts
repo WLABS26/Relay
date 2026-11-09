@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { checkDatabase, REQUIRED_SCHEMA_VERSION } from '@relay/db';
+import { safeError } from '@relay/services';
 import { webContext } from '@/lib/server/context';
 
-/** Readiness: database reachable at a compatible schema version and storage reachable. */
+/**
+ * Readiness: database reachable at a compatible schema version and storage reachable.
+ * Failure causes are logged server-side only; the response never includes them.
+ */
 export async function GET() {
   const checks: Record<string, string> = {};
   let ok = true;
@@ -17,11 +21,14 @@ export async function GET() {
     try {
       await ctx.storage.ping();
       checks.storage = 'ok';
-    } catch {
+    } catch (error) {
+      // The probe answers tersely; the cause goes to the server log for operators.
+      ctx.logger.warn({ err: safeError(error) }, 'readiness: storage unreachable');
       checks.storage = 'unreachable';
       ok = false;
     }
-  } catch {
+  } catch (error) {
+    console.error('[relay-web] readiness: database unreachable', safeError(error));
     checks.database = 'unreachable';
     ok = false;
   }

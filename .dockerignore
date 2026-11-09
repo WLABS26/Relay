@@ -1,0 +1,17 @@
+# Build context for infra/docker/*.Dockerfile (context = repository root).
+# Never send local secrets, dependencies or build output to the builder.
+.git
+**/node_modules
+**/.next
+**/dist
+**/.impeccable
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+fixtures/media
+apps/web/test-results
+apps/web/playwright-report
+apps/web/blob-report
+coverage
+.DS_Store

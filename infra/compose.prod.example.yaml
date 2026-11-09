@@ -1,0 +1,59 @@
+# Example deployment topology for the Relay images (a template, not used by CI or tests).
+#
+# Copy to compose.prod.yaml and provide `relay.env` from your secrets manager. Values must come
+# from operator-provided configuration; this file contains placeholders only.
+#
+# IMPORTANT: this build intentionally refuses RELAY_ENV=production. Production requires the KMS
+# key provider (RELAY_ENCRYPTION_PROVIDER=kms), which ships with milestone M3; until then web and
+# worker exit with code 78 on a production configuration. Use RELAY_ENV=staging for a
+# non-production deployment of this build.
+#
+# PostgreSQL (16+, with the relay_migrator / relay_app / relay_worker roles from
+# infra/postgres/init) and the S3-compatible bucket are expected to be managed services.
+#
+#   docker compose -f compose.prod.yaml --profile ops run --rm migrate   # operator action
+#   docker compose -f compose.prod.yaml up -d
+
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  env_file: relay.env
+
+services:
+  web:
+    <<: *hardening
+    image: relay-web:${RELAY_VERSION:?set RELAY_VERSION}
+    ports:
+      - '127.0.0.1:3000:3000' # put a TLS-terminating reverse proxy in front
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache:uid=1000,gid=1000
+
+  # One process per pool so long media jobs can never starve publishing.
+  worker-general:
+    <<: *hardening
+    image: relay-worker:${RELAY_VERSION:?set RELAY_VERSION}
+    environment:
+      RELAY_WORKER_POOLS: general
+
+  worker-media:
+    <<: *hardening
+    image: relay-worker:${RELAY_VERSION:?set RELAY_VERSION}
+    environment:
+      RELAY_WORKER_POOLS: media
+      RELAY_MEDIA_CONCURRENCY: '1'
+    tmpfs:
+      - /tmp:size=8g # media scratch space; size it for your largest accepted upload
+
+  # Schema migrations are a separate, explicit operator action (never run on start-up).
+  migrate:
+    <<: *hardening
+    image: relay-worker:${RELAY_VERSION:?set RELAY_VERSION}
+    profiles: [ops]
+    restart: 'no'
+    command: ['node', 'dist/migrate.js']

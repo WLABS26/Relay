@@ -6,6 +6,12 @@ import { E2E_PORT } from './e2e/env';
  * E2E_DEV=1), the worker with both pools, PostgreSQL and S3-compatible storage — all pointed
  * at the isolated `relay_e2e` database and `relay-e2e` bucket. Providers are simulated.
  */
+/**
+ * E2E_BASE_URL runs the suite against an already-running, demo-seeded stack (for example the
+ * container images) instead of starting one; the database it uses must be seeded the same way.
+ */
+const externalBaseUrl = process.env.E2E_BASE_URL;
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 180_000,
@@ -15,7 +21,7 @@ export default defineConfig({
   retries: 0,
   reporter: [['list']],
   use: {
-    baseURL: `http://localhost:${E2E_PORT}`,
+    baseURL: externalBaseUrl ?? `http://localhost:${E2E_PORT}`,
     trace: 'off',
     screenshot: 'only-on-failure',
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH ?? undefined },
@@ -28,12 +34,14 @@ export default defineConfig({
     },
     { name: 'mobile', use: { ...devices['Pixel 7'] }, testMatch: /mobile\.spec\.ts/ },
   ],
-  webServer: {
-    command: 'pnpm exec tsx e2e/stack.ts',
-    url: `http://localhost:${E2E_PORT}/api/ready`,
-    reuseExistingServer: false,
-    timeout: 300_000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
+  webServer: externalBaseUrl
+    ? undefined
+    : {
+        command: 'pnpm exec tsx e2e/stack.ts',
+        url: `http://localhost:${E2E_PORT}/api/ready`,
+        reuseExistingServer: false,
+        timeout: 300_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
 });

@@ -29,7 +29,17 @@ export async function recreateDatabase(options: {
   const admin = new pg.Client({ connectionString: withDatabase(options.migratorUrl, 'postgres') });
   await admin.connect();
   try {
-    await admin.query(`DROP DATABASE IF EXISTS ${options.database} WITH (FORCE)`);
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS ${options.database} WITH (FORCE)`);
+    } catch (error) {
+      // Least privilege: the migrator cannot terminate the app/worker roles' sessions.
+      if ((error as { code?: string }).code === '42501') {
+        throw new Error(
+          `Database "${options.database}" is still in use by the web app or worker (relay_app / relay_worker sessions). Stop them (pnpm dev, pnpm worker:dev, or any containers using it) and retry.`,
+        );
+      }
+      throw error;
+    }
     await admin.query(`CREATE DATABASE ${options.database}`);
     await admin.query(`REVOKE ALL ON DATABASE ${options.database} FROM PUBLIC`);
     await admin.query(`GRANT CONNECT ON DATABASE ${options.database} TO relay_app, relay_worker`);

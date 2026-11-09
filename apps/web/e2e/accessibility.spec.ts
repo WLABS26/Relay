@@ -27,11 +27,13 @@ test.describe('keyboard and theme', () => {
     ).toHaveAttribute('aria-current', 'page');
   });
 
-  test('the dark theme applies to the same workflow screens', async ({ page, context }) => {
+  test('the dark theme applies to the same workflow screens', async ({
+    page,
+    context,
+    baseURL,
+  }) => {
     await signIn(page, 'Mara Lindqvist');
-    await context.addCookies([
-      { name: 'relay_theme', value: 'dark', url: 'http://localhost:3100' },
-    ]);
+    await context.addCookies([{ name: 'relay_theme', value: 'dark', url: baseURL! }]);
     for (const path of ['/w/fernhill/calendar', '/w/fernhill/posts', '/w/fernhill/results']) {
       await page.goto(path);
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

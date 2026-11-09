@@ -1,10 +1,18 @@
-// Bundle the worker for production. Workspace packages (TypeScript source) are bundled;
-// runtime dependencies with native or dynamic loading stay external and ship in node_modules.
+// Bundle the worker (and the migration runner) for production. Workspace packages (TypeScript
+// source) are bundled; runtime dependencies with native or dynamic loading stay external and
+// are declared as direct dependencies of @relay/worker, so `pnpm deploy` places them where the
+// bundle can resolve them.
+//
+// dist/migrate.js resolves its SQL from `../migrations` (relative to dist/), so the image ships
+// packages/db/migrations at /app/migrations.
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/main.ts'],
-  outfile: 'dist/main.js',
+  entryPoints: {
+    main: 'src/main.ts',
+    migrate: '../../packages/db/src/cli/migrate.ts',
+  },
+  outdir: 'dist',
   bundle: true,
   platform: 'node',
   target: 'node22',
