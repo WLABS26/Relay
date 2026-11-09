@@ -179,7 +179,7 @@ as documented.
 | `pnpm test:integration`          | 51 passed                                                                                                |
 | `pnpm test:e2e`                  | production build, then 14 passed                                                                         |
 
-Container images (built from the working tree at the same commit):
+Container images, built from commit `36942d3` (later commits change only docs, tests and an untracked generated file):
 
 | Command                                                    | Result                                                                 |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
