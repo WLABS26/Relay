@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withTenant } from '@relay/db';
 import { DEFAULT_PUBLISHING_RULES, ManualClock } from '@relay/domain';
 import {
+  createPost,
+  decideApprovals,
   getCalendar,
   getPostDetail,
   putPublishingRules,
@@ -9,6 +11,7 @@ import {
   scheduleDestination,
   setPagePaused,
   setSlotLock,
+  submitPost,
   unscheduleDestination,
   updatePage,
   updatePost,
@@ -403,5 +406,61 @@ describe('scheduling: time zones, pacing and concurrency (M1 gate)', () => {
       ),
       'idempotency_key_reused',
     );
+  });
+  it('applies a batch approval per destination: a stale decision is refused, the rest are recorded', async () => {
+    const created = await createPost(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      {
+        pageId: t.pageId,
+        title: 'Batch approval',
+        caption: 'Two destinations, one stale review',
+        mediaAssetIds: [asset],
+        destinationIds: [
+          t.destinations.yt!.pageDestinationId,
+          t.destinations.ig!.pageDestinationId,
+        ],
+      },
+      meta,
+    );
+    const postId = created.body.postId;
+    await submitPost(c.app, t.owner, t.workspaceId, postId, {}, meta);
+    const detail = await getPostDetail(c.app, t.owner, t.workspaceId, postId);
+    const yt = detail.destinations.find(
+      (d) => d.pageDestinationId === t.destinations.yt!.pageDestinationId,
+    )!;
+    const ig = detail.destinations.find(
+      (d) => d.pageDestinationId === t.destinations.ig!.pageDestinationId,
+    )!;
+    const decided = await decideApprovals(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      postId,
+      {
+        decisions: [
+          {
+            postDestinationId: yt.id,
+            decision: 'approve' as const,
+            revisionId: detail.revision.id,
+            intentHash: yt.intentHash,
+          },
+          // The reviewer saw an older preview of this destination.
+          {
+            postDestinationId: ig.id,
+            decision: 'approve' as const,
+            revisionId: detail.revision.id,
+            intentHash: '0'.repeat(64),
+          },
+        ],
+      },
+      meta,
+    );
+    const byId = new Map(decided.outcomes.map((o) => [o.postDestinationId, o]));
+    expect(byId.get(yt.id)).toMatchObject({ ok: true, state: 'approved' });
+    expect(byId.get(ig.id)).toMatchObject({ ok: false, error: { code: 'version_conflict' } });
+    expect((await destinationState(c.app, t.workspaceId, yt.id)).state).toBe('approved');
+    expect((await destinationState(c.app, t.workspaceId, ig.id)).state).toBe('needs_review');
   });
 });

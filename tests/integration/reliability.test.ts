@@ -52,6 +52,25 @@ function stallingRegistry(
   };
 }
 
+/** Wrap the registry so every dispatch is refused with 429, like a persistently throttled platform. */
+function alwaysRateLimited(base: AdapterRegistry): AdapterRegistry {
+  return {
+    metrics: base.metrics.bind(base),
+    publishing(provider, mode) {
+      const adapter = base.publishing(provider, mode);
+      if (!adapter) return adapter;
+      return {
+        ...adapter,
+        async advance(input) {
+          if (input.checkpoint.phase === 'dispatch')
+            return { kind: 'rate_limited', retryAfterSeconds: 30, code: 'sim_rate_limited' };
+          return adapter.advance(input);
+        },
+      };
+    },
+  };
+}
+
 async function remotePosts(c: Contexts, operationPrefix: string) {
   return c.worker.db
     .selectFrom('providerSim.remotePosts')
@@ -83,7 +102,7 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
   });
   afterAll(async () => c.close());
 
-  const asap = async (key: string, extraKeys: string[] = []) => {
+  const asap = async (key: string, extraKeys: string[] = [], assetIds: string[] = [video]) => {
     // Accounts are reused across tests: keep posts beyond the 2 h minimum gap (and out of quiet hours).
     clock.advance(3 * 3600_000);
     if (clock.now().getUTCHours() >= 21 || clock.now().getUTCHours() < 6)
@@ -97,7 +116,7 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
           ),
         ),
       );
-    const p = await approvedPost(c, t, { destinationKeys: [key, ...extraKeys], assetIds: [video] });
+    const p = await approvedPost(c, t, { destinationKeys: [key, ...extraKeys], assetIds });
     for (const k of [key, ...extraKeys]) {
       await scheduleDestination(
         c.app,
@@ -362,5 +381,62 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
       ),
       'version_conflict',
     );
+  });
+  it('gives up after repeated rate limits without dispatching; an operator retry then publishes once', async () => {
+    const p = await asap('yt');
+    const id = p.destinations.yt!.id;
+    const original = c.worker.registry;
+    c.worker.registry = alwaysRateLimited(original);
+    try {
+      const r = await drivePublishing(c, t.workspaceId, id, { maxSteps: 60 });
+      expect(r.state).toBe('failed');
+      // Five retries with the platform's Retry-After honoured, then the destination gives up.
+      expect(r.steps.filter((step) => step === 'dispatch:rate_limited')).toHaveLength(6);
+    } finally {
+      c.worker.registry = original;
+    }
+    const opPrefix = `${t.workspaceId}:${id}:`;
+    expect((await remotePosts(c, opPrefix)).some((r) => r.status === 'published')).toBe(false);
+    const failed = await destinationState(c.app, t.workspaceId, id);
+    expect(failed.stateReason).toBe('sim_rate_limited');
+    await retryDestination(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      id,
+      { expectedVersion: failed.version },
+      meta,
+    );
+    expect((await drivePublishing(c, t.workspaceId, id)).state).toBe('published');
+    expect((await remotePosts(c, opPrefix)).filter((r) => r.status === 'published')).toHaveLength(
+      1,
+    );
+  });
+
+  it('blocks dispatch when rights are revoked after preparation, and never sends the post', async () => {
+    // Its own asset, so the revocation cannot affect other tests.
+    const own = (await uploadFixture(c, t, t.owner, 'square-720-noaudio-4s.mp4', 'video/mp4'))
+      .assetId;
+    const p = await asap('yt', [], [own]);
+    const id = p.destinations.yt!.id;
+    const prepared = await drivePublishing(c, t.workspaceId, id, { maxSteps: 1 });
+    expect(prepared.steps).toEqual(['prepare:continue']);
+    // The rights holder withdraws consent between preparation and dispatch. (The revoke
+    // command itself ships with rights management in M2; the app role may set these columns.)
+    await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) =>
+      tx
+        .updateTable('sourceRightsGrants')
+        .set({
+          revokedAt: clock.now(),
+          revokedBy: t.owner.userId,
+          revokeReason: 'Consent withdrawn',
+        })
+        .where('assetId', '=', own)
+        .execute(),
+    );
+    expect((await drivePublishing(c, t.workspaceId, id)).state).toBe('blocked');
+    expect((await destinationState(c.app, t.workspaceId, id)).stateReason).toBe('rights_changed');
+    const remote = await remotePosts(c, `${t.workspaceId}:${id}:`);
+    expect(remote.some((r) => r.status === 'published')).toBe(false);
   });
 });

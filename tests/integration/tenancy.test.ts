@@ -278,4 +278,17 @@ describe('tenant isolation (M0 gate)', () => {
     bare.search = '';
     expect((await fetchAll(bare)).status).toBe(403);
   });
+  it('signed media URLs stop working once they expire', async () => {
+    const { objectKey } = await withTenant(c.worker.db, { workspaceId: a.workspaceId }, (tx) =>
+      tx
+        .selectFrom('mediaAssets')
+        .select(['objectKey'])
+        .where('id', '=', aAsset)
+        .executeTakeFirstOrThrow(),
+    );
+    const { url } = await c.app.storage.presignGet({ key: objectKey, expiresInSeconds: 1 });
+    expect((await fetchAll(url)).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    expect((await fetchAll(url)).status).toBe(403);
+  });
 });
