@@ -4,9 +4,11 @@ Tracking document required by `docs/RELAY_BUILD_SPEC.md` §1. Update it at the e
 milestone session. After an interruption, read this file and `git log`/`git diff` before
 resuming; do not re-scaffold completed work.
 
-- **Current branch:** `relay/m0-m1-foundation` (local; not pushed)
+- **Branch:** `main`; GitHub `WLABS26/relay` (the repository is created by the owner; this
+  session can only push to an existing one). CI: `.github/workflows/ci.yml`.
 - **Last updated:** 2026-11-09
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
+- **Try it:** [`docs/testing-guide.md`](testing-guide.md) (GitHub Codespaces via `.devcontainer/`, or locally)
 - **Next milestone:** M2 · Source to clip (see [Next runnable task](#next-runnable-task))
 
 > Every connection in this build is **simulated**. A simulator success demonstrates workflow
@@ -114,7 +116,7 @@ deviations from the spec's greenfield defaults:
 
 1. **Kysely + SQL-first migrations** instead of an ORM schema DSL: RLS policies, triggers and
    grants are first-class SQL; types are generated from the live schema and drift-checked.
-2. **versitygw** for local S3: the MinIO images were unavailable in this environment;
+2. **versitygw** for local S3: the MinIO images were unavailable in the build environment;
    versitygw passed an empirical S3-feature probe (presign, multipart, versioning, conditional writes, CORS).
 3. **KMS deferred to M3, production fails closed** rather than storing secrets under a local key.
 4. **`style-src 'unsafe-inline'`** for React style attributes; scripts remain nonce-bound (`'strict-dynamic'`).
@@ -153,7 +155,7 @@ None of these can be completed from code; each needs a separate operator action.
 - No real provider adapters; switching from demo to a test account requires M3 (see the operations runbook).
 - Invitation e-mail delivery is not implemented: the invite link is shown to the inviter to share.
 - Expired sessions and login attempts are not yet purged by a retention job (planned with M7 retention).
-- Provider documentation was **not re-verified** in this session; no endpoint versions or scopes were chosen yet.
+- Provider documentation was **not re-verified** for this build; no endpoint versions or scopes were chosen yet.
 - The web server exits immediately on SIGTERM without draining. All mutations are transactional
   and idempotent, so an interrupted request rolls back and can be retried safely.
 - The worker image is about 1 GB, mostly Ubuntu's FFmpeg codec libraries.
@@ -180,10 +182,10 @@ as documented.
 | `pnpm lint`                      | clean, zero warnings; source check passed                                                                |
 | `pnpm format:check`              | clean                                                                                                    |
 | `pnpm test`                      | 203 passed                                                                                               |
-| `pnpm test:integration`          | 51 passed                                                                                                |
-| `pnpm test:e2e`                  | production build, then 14 passed                                                                         |
+| `pnpm test:integration`          | 51 passed (54 once the membership and regression tests landed later)                                     |
+| `pnpm test:e2e`                  | production build, then 14 passed (16 with the membership tests)                                          |
 
-Container images, built from commit `36942d3` (later commits change only docs, tests and an untracked generated file):
+Container images, built and tested at commit `36942d3` (a later commit changed services code, so the CI `images` job rebuilds and smoke-tests both images on every push):
 
 | Command                                                    | Result                                                                 |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------- |

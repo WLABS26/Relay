@@ -29,7 +29,7 @@ change never leaves a job behind.
 | `maintenance.cleanup`        | general | —                                                         | 1            | `cron_cleanup`             | Hourly at :17: removes expired idempotency records                                                                                                                                                                                                              |
 
 Queue-level attempts only cover crashes and re-delivery; publish retries are governed by
-Relay's own attempt ledger (at most five consecutive retryable or rate-limited attempts, with
+Relay's own attempt ledger (an attempt plus at most five consecutive retries on retryable or rate-limited results, with
 exponential backoff or the provider's Retry-After, before `failed`).
 
 ## Inspecting jobs

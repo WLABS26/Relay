@@ -12,6 +12,7 @@ import {
 import { isConfigError, loadConfig, type RelayConfig } from '@relay/config';
 import { loadDotEnv } from '@relay/config/dotenv';
 import { checkDatabase, REQUIRED_SCHEMA_VERSION } from '@relay/db';
+import { prlimitAvailable } from '@relay/media';
 import {
   advancePublish,
   cleanupExpired,
@@ -55,6 +56,11 @@ try {
 }
 
 const log = ctx.logger.child({ component: 'worker' });
+if (config.media.usePrlimit && !prlimitAvailable()) {
+  log.warn(
+    'prlimit (util-linux) not found: media tools run with timeouts and process-group kill only, without memory/CPU caps',
+  );
+}
 const workerBase = config.worker.workerId ?? `${hostname()}-${process.pid}`;
 
 const schema = await checkDatabase(ctx.db).catch((error: unknown) => {

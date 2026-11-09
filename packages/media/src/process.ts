@@ -50,6 +50,11 @@ function findPrlimit(): string | null {
   return prlimitPath;
 }
 
+/** Whether prlimit (util-linux) is available for memory/CPU caps on media tools. */
+export function prlimitAvailable(): boolean {
+  return findPrlimit() !== null;
+}
+
 export async function runTool(
   command: string,
   args: readonly string[],

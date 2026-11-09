@@ -1,0 +1,31 @@
+# Dev container services, layered on top of infra/compose.yaml (the same images and
+# provisioning used for local development and CI).
+#
+# PostgreSQL, the S3 gateway and its provisioning job share the dev container's network
+# namespace, so inside the dev container they are plain 127.0.0.1:5432 and 127.0.0.1:7070:
+# .env.example works unchanged, and Codespaces can forward port 7070 to your browser.
+services:
+  app:
+    build:
+      # Relative to the repository root's siblings, so it resolves the same way whichever
+      # compose file Compose treats as the project directory.
+      context: ../.devcontainer
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspaces/relay:cached
+    command: sleep infinity
+    environment:
+      RELAY_DEVCONTAINER: 'true'
+
+  postgres:
+    network_mode: service:app
+    ports: !reset []
+
+  s3:
+    network_mode: service:app
+    ports: !reset []
+
+  s3-provision:
+    network_mode: service:app
+    environment:
+      S3_ENDPOINT: http://127.0.0.1:7070

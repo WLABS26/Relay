@@ -9,6 +9,14 @@ durable worker publish it, with every outcome (including the uncertain ones) vis
 > nothing is ever sent to a real platform. See
 > [`docs/implementation-status.md`](docs/implementation-status.md).
 
+## Try it without installing anything
+
+Open the repository on GitHub → **Code → Codespaces → Create codespace on main**. The dev
+container (`.devcontainer/`) installs everything, migrates and seeds the database, generates
+sample media and starts the app and the worker. Then open port **3000** from the Ports panel and
+set port **7070** (media storage) to **Public** so your browser can upload and preview files.
+The walk-through is in [`docs/testing-guide.md`](docs/testing-guide.md).
+
 ## Quick start
 
 Prerequisites: Node 22.18+ (`.nvmrc` pins 22.23.4), pnpm 10.28 (`corepack enable`), Docker
@@ -66,8 +74,8 @@ Open <http://localhost:3000> and pick a demo account. `pnpm infra:up` is
 |                                 | Kim Sato       | Editor                                |
 
 The seed includes published history with simulated results, a week of scheduled posts, a
-review queue, a draft, and a **Simulator lab** page with mixed outcomes (rejected, unknown,
-rate limited, slow processing). All seeded data is synthetic and labelled.
+review queue, a draft, and a **Simulator lab** page with one post across three scripted
+platforms: rejected, outcome unknown, and a lost response that reconciliation proved published. All seeded data is synthetic and labelled.
 
 ## Commands
 
@@ -116,6 +124,7 @@ writes the change, an audit event and any job in one transaction, and returns.
 ## Documentation
 
 - [Implementation status](docs/implementation-status.md): milestones, evidence, constraints, next task
+- [Testing guide](docs/testing-guide.md): guided tour of the M0/M1 behaviour, locally or in Codespaces
 - [Architecture decisions](docs/architecture/decisions.md)
 - [Security model](docs/security-model.md)
 - [Provider matrix](docs/providers/matrix.md)
@@ -123,6 +132,13 @@ writes the change, an audit event and any job in one transaction, and returns.
 - [Operations runbook](docs/runbooks/operations.md): health, jobs, recovery, media cleanup, demo → test account
 - [Onboarding](docs/onboarding.md): conventions and how to extend Relay
 - [Build specification](docs/RELAY_BUILD_SPEC.md)
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request: lint, types, unit tests,
+the integration and end-to-end suites against real PostgreSQL, S3-compatible storage and
+FFmpeg, and a build of both container images (which must refuse a production configuration
+that contains demo mode). Providers are always simulated in CI; no credentials are used.
 
 ## Deployment
 

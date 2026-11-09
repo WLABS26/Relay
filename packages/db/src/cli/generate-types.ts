@@ -50,7 +50,7 @@ const args = [
 ];
 if (check) args.push('--verify');
 try {
-  execFileSync('npx', args, { stdio: 'inherit', cwd: path.resolve(here, '../..') });
+  execFileSync('pnpm', ['exec', ...args], { stdio: 'inherit', cwd: path.resolve(here, '../..') });
   console.log(check ? '[types] generated types are up to date' : `[types] wrote ${outFile}`);
 } catch {
   console.error(

@@ -6,6 +6,10 @@
 **/dist
 **/.impeccable
 **/*.tsbuildinfo
+**/.turbo
+.pnpm-store
+.scratch
+out
 .env
 .env.*
 !.env.example

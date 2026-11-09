@@ -24,6 +24,7 @@ export default defineConfig({
     baseURL: externalBaseUrl ?? `http://localhost:${E2E_PORT}`,
     trace: 'off',
     screenshot: 'only-on-failure',
+    // Optional: use a preinstalled Chromium instead of Playwright's download (CI images, sandboxes).
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH ?? undefined },
   },
   projects: [

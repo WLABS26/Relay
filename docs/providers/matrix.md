@@ -10,8 +10,8 @@ As of 2026-11-09 **nothing is implemented or live-verified**. M0/M1 use only sim
 
 ## Documentation verification
 
-The spec's research baseline is 9 November 2026. **Provider documentation was not re-checked in
-this session** because no adapter, endpoint version or scope was chosen in M0/M1. Each adapter
+The spec's research baseline is 9 November 2026. **Provider documentation was not re-checked for
+this build** because no adapter, endpoint version or scope was chosen in M0/M1. Each adapter
 milestone must verify the primary references below on the day it starts, record the date
 checked here, and record discrepancies instead of guessing.
 

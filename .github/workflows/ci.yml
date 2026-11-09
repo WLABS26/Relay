@@ -1,0 +1,117 @@
+# Continuous integration. Providers are always simulated here; no credential of any kind is
+# needed or used (spec §13: CI uses fake providers, without production credentials).
+#
+# Actions are pinned to commit SHAs (the tag is in the comment) so a moved tag cannot change
+# what runs. Bump deliberately: `git ls-remote --tags https://github.com/<owner>/<repo>`.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
+jobs:
+  checks:
+    name: Lint, types, unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm format:check
+
+  integration:
+    name: Integration and end-to-end (real Postgres, S3, FFmpeg)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install FFmpeg (Ubuntu 24.04 ships 6.1, the version the media suite is verified against)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+      - run: pnpm install --frozen-lockfile
+      - name: Local configuration (development placeholders only)
+        run: cp .env.example .env
+      - name: Start PostgreSQL and S3-compatible storage
+        run: pnpm infra:up
+      - run: pnpm db:migrate
+      - run: pnpm db:types:check
+      - run: pnpm fixtures:generate
+      - run: pnpm test:integration
+      - name: Install the Playwright browser
+        run: pnpm --filter @relay/web exec playwright install --with-deps chromium
+      - name: End-to-end (production build, real worker, simulated providers)
+        run: pnpm test:e2e
+      - name: Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-results
+          path: apps/web/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Infrastructure logs
+        if: failure()
+        run: docker compose -f infra/compose.yaml logs --no-color --tail=200
+
+  images:
+    name: Container images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the worker image
+        run: docker build -f infra/docker/worker.Dockerfile -t relay-worker:ci .
+      - name: Build the web image
+        run: docker build -f infra/docker/web.Dockerfile -t relay-web:ci .
+      - name: Images refuse a production configuration with demo mode and default secrets (exit 78)
+        run: |
+          cat > /tmp/bad-production.env <<'EOF'
+          NODE_ENV=production
+          RELAY_ENV=production
+          RELAY_DEMO_MODE=true
+          RELAY_PUBLIC_URL=https://relay.example
+          RELAY_SESSION_SECRET=relay-dev-session-secret-change-me-0123456789abcdef
+          DATABASE_URL_APP=postgres://relay_app:relay-dev-app@127.0.0.1:5432/relay
+          DATABASE_URL_WORKER=postgres://relay_worker:relay-dev-worker@127.0.0.1:5432/relay
+          S3_BUCKET=relay-prod
+          RELAY_ENCRYPTION_PROVIDER=local
+          RELAY_ENCRYPTION_KEYS=dev-2026-11:ZGV2LWtleS1kby1ub3QtdXNlLWluLXByb2R1Y3Rpb24=
+          EOF
+          for image in relay-worker:ci relay-web:ci; do
+            set +e
+            docker run --rm --env-file /tmp/bad-production.env "$image"
+            code=$?
+            set -e
+            echo "$image exited with $code"
+            test "$code" -eq 78
+          done

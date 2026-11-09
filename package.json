@@ -1,6 +1,12 @@
 {
   "name": "relay",
   "private": true,
+  "description": "Relay: a publishing workspace for social media marketers and clippers (M0/M1: simulated providers only)",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WLABS26/relay.git"
+  },
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
