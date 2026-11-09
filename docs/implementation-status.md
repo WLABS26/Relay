@@ -69,6 +69,10 @@ writes and composite FKs rejected, no context leakage across pooled connections,
 privilege, read-only maintenance scans, `not_found` for cross-tenant IDs through every service,
 signed URLs bound to their key, expiry). Over HTTP: `apps/web/e2e/security.spec.ts`
 (cross-tenant 404s for pages, posts, assets and media URLs; tampered signed URL 403; bare object 403).
+`tests/integration/access.test.ts` also covers people who belong to several workspaces
+(joining a second workspace, per-workspace member lists and last-owner rule, no reach into
+another workspace's memberships). Writing these found and fixed a scoping bug: membership
+queries relied on RLS alone, whose read policy also exposes a user's own memberships elsewhere.
 
 **M0: "Demo credentials fail closed in production config."** `apps/web/e2e/fail-closed.spec.ts`
 starts the real web server and worker with production settings: demo mode and default secrets
@@ -95,8 +99,8 @@ provider write; repeated 429s give up without dispatching; rights revoked after 
 | Suite                                       | Command                                                        | Result                |
 | ------------------------------------------- | -------------------------------------------------------------- | --------------------- |
 | Unit                                        | `pnpm test`                                                    | 203 passed (17 files) |
-| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 51 passed (6 files)   |
-| End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 14 passed             |
+| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 54 passed (6 files)   |
+| End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 16 passed             |
 | E2E against container images                | `E2E_BASE_URL=… pnpm --filter @relay/web exec playwright test` | 14 passed             |
 | Uploads with FFmpeg inside the worker image | uploads suite with image-backed `FFPROBE_PATH`/`FFMPEG_PATH`   | 16 passed             |
 | Lint (ESLint, zero warnings) + source check | `pnpm lint`                                                    | clean                 |

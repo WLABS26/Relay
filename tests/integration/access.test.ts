@@ -10,6 +10,7 @@ import {
   getPostDetail,
   inviteMember,
   issueSession,
+  listMembers,
   listPages,
   listPosts,
   removeMember,
@@ -305,5 +306,70 @@ describe('sessions and demo authentication (M0 gate)', () => {
       await on.close();
       await off.close();
     }
+  });
+});
+
+describe('people who belong to several workspaces', () => {
+  let c: Contexts;
+  let a: Tenant;
+  let b: Tenant;
+
+  beforeAll(async () => {
+    c = makeContexts();
+    a = await createTenant(c.app);
+    b = await createTenant(c.app);
+  });
+  afterAll(async () => c.close());
+
+  const membershipOf = async (viewer: AuthenticatedUser, workspaceId: string, userId: string) =>
+    (await listMembers(c.app, viewer, workspaceId)).members.find((m) => m.userId === userId)!;
+
+  it('can accept an invitation to a second workspace, whose list shows only its own members', async () => {
+    const invite = await inviteMember(
+      c.app,
+      a.owner,
+      a.workspaceId,
+      { email: b.owner.email, role: 'editor' },
+      meta,
+    );
+    expect(await acceptInvitation(c.app, b.owner, { token: invite.token }, meta)).toEqual({
+      workspaceId: a.workspaceId,
+      slug: a.slug,
+    });
+    for (const viewer of [a.owner, b.owner]) {
+      const { members } = await listMembers(c.app, viewer, a.workspaceId);
+      expect(members.map((m) => m.userId).sort()).toEqual([a.owner.userId, b.owner.userId].sort());
+    }
+  });
+
+  it('keeps the last-owner rule per workspace for someone who owns another workspace too', async () => {
+    const invite = await inviteMember(
+      c.app,
+      b.owner,
+      b.workspaceId,
+      { email: a.owner.email, role: 'owner' },
+      meta,
+    );
+    await acceptInvitation(c.app, a.owner, { token: invite.token }, meta);
+    const own = await membershipOf(a.owner, a.workspaceId, a.owner.userId);
+    await expectAppError(removeMember(c.app, a.owner, a.workspaceId, own.id, meta), 'last_owner');
+  });
+
+  it('cannot reach a membership of another workspace through this one', async () => {
+    // a.owner's own membership in B, addressed through workspace A.
+    const inB = await membershipOf(a.owner, b.workspaceId, a.owner.userId);
+    await expectAppError(removeMember(c.app, a.owner, a.workspaceId, inB.id, meta), 'not_found');
+    await expectAppError(
+      updateMember(
+        c.app,
+        a.owner,
+        a.workspaceId,
+        inB.id,
+        { expectedVersion: inB.version, role: 'viewer' },
+        meta,
+      ),
+      'not_found',
+    );
+    expect((await membershipOf(a.owner, b.workspaceId, a.owner.userId)).role).toBe('owner');
   });
 });

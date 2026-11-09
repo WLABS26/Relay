@@ -195,6 +195,11 @@ export function MemberActions({
           <Button
             variant="ghost"
             onClick={async () => {
+              // Access is revoked immediately, so the action is confirmed first.
+              const question = self
+                ? 'Leave this workspace? You will lose access immediately.'
+                : 'Remove this member? They will lose access immediately.';
+              if (!window.confirm(question)) return;
               setError(null);
               try {
                 await apiFetch(`/api/v1/workspaces/${workspaceId}/members/${membershipId}`, {

@@ -37,11 +37,13 @@ export async function listMembers(
         'u.email',
         'u.isDemo',
       ])
+      .where('m.workspaceId', '=', workspaceId)
       .orderBy('u.displayName')
       .execute();
     const grants = await tx
       .selectFrom('membershipPages')
       .select(['membershipId', 'pageId'])
+      .where('workspaceId', '=', workspaceId)
       .execute();
     const invitations =
       member.role === 'owner' || member.role === 'admin'
@@ -56,6 +58,7 @@ export async function listMembers(
               'createdAt',
               'expiresAt',
             ])
+            .where('workspaceId', '=', workspaceId)
             .where('acceptedAt', 'is', null)
             .where('revokedAt', 'is', null)
             .orderBy('createdAt', 'desc')
@@ -115,6 +118,7 @@ export async function inviteMember(
       .selectFrom('workspaceMemberships as m')
       .innerJoin('users as u', 'u.id', 'm.userId')
       .select('m.id')
+      .where('m.workspaceId', '=', workspaceId)
       .where('u.emailNormalized', '=', email)
       .executeTakeFirst();
     if (existing)
@@ -187,9 +191,12 @@ export async function acceptInvitation(
         'This invitation is invalid, expired, or for a different email address.',
       );
     }
+    // Explicit workspace scope: the read policy also shows the user's own memberships in
+    // other workspaces, so RLS alone would make every second workspace look joined.
     const existing = await tx
       .selectFrom('workspaceMemberships')
       .select('id')
+      .where('workspaceId', '=', workspaceId)
       .where('userId', '=', user.userId)
       .executeTakeFirst();
     if (existing)
@@ -249,6 +256,7 @@ async function lockOwners(tx: Tx, workspaceId: string): Promise<number> {
   const row = await tx
     .selectFrom('workspaceMemberships')
     .select(({ fn }) => fn.countAll<number>().as('n'))
+    .where('workspaceId', '=', workspaceId)
     .where('role', '=', 'owner')
     .executeTakeFirstOrThrow();
   return Number(row.n);
@@ -269,6 +277,7 @@ export async function updateMember(
     const target = await tx
       .selectFrom('workspaceMemberships')
       .selectAll()
+      .where('workspaceId', '=', workspaceId)
       .where('id', '=', membershipId)
       .executeTakeFirst();
     if (!target) throw new AppError('not_found', 'Member not found');
@@ -288,6 +297,7 @@ export async function updateMember(
     const updated = await tx
       .updateTable('workspaceMemberships')
       .set({ role: nextRole, allPages, version: sql`version + 1` })
+      .where('workspaceId', '=', workspaceId)
       .where('id', '=', membershipId)
       .where('version', '=', input.expectedVersion)
       .returning(['version'])
@@ -300,7 +310,11 @@ export async function updateMember(
     if (input.pageIds !== undefined || allPages) {
       const pageIds = allPages ? [] : [...new Set(input.pageIds ?? [])];
       await assertPagesExist(tx, pageIds);
-      await tx.deleteFrom('membershipPages').where('membershipId', '=', membershipId).execute();
+      await tx
+        .deleteFrom('membershipPages')
+        .where('workspaceId', '=', workspaceId)
+        .where('membershipId', '=', membershipId)
+        .execute();
       if (pageIds.length)
         await tx
           .insertInto('membershipPages')
@@ -334,6 +348,7 @@ export async function removeMember(
     const target = await tx
       .selectFrom('workspaceMemberships')
       .selectAll()
+      .where('workspaceId', '=', workspaceId)
       .where('id', '=', membershipId)
       .executeTakeFirst();
     if (!target) throw new AppError('not_found', 'Member not found');
@@ -341,7 +356,11 @@ export async function removeMember(
       throw new AppError('forbidden', 'Only owners can remove owners.');
     if (target.role === 'owner' && owners <= 1)
       throw new AppError('last_owner', 'The last owner cannot leave or be removed.');
-    await tx.deleteFrom('workspaceMemberships').where('id', '=', membershipId).execute();
+    await tx
+      .deleteFrom('workspaceMemberships')
+      .where('workspaceId', '=', workspaceId)
+      .where('id', '=', membershipId)
+      .execute();
     await appendAudit(tx, ctx.ids, {
       workspaceId,
       actor: memberActor(member),
