@@ -16,7 +16,8 @@ import {
   type TransitionTrigger,
 } from './states';
 
-const edges = (from: DestinationState) => Object.entries(TRANSITIONS[from]) as Array<[TransitionTrigger, DestinationState]>;
+const edges = (from: DestinationState) =>
+  Object.entries(TRANSITIONS[from]) as Array<[TransitionTrigger, DestinationState]>;
 
 describe('destination state machine', () => {
   it('defines every state, label and description, and only targets known states', () => {
@@ -47,12 +48,14 @@ describe('destination state machine', () => {
     expect(edges('published')).toEqual([]);
     expect(edges('canceled')).toEqual([]);
     // Other terminal states only reopen through a new revision (edit) or withdrawal.
-    for (const s of TERMINAL_STATES) for (const [t] of edges(s)) expect(['edit', 'withdraw']).toContain(t);
+    for (const s of TERMINAL_STATES)
+      for (const [t] of edges(s)) expect(['edit', 'withdraw']).toContain(t);
   });
 
   it('cannot edit, cancel, block or pause a post once dispatch is claimed', () => {
     for (const s of ['dispatching', 'processing'] as const) {
-      for (const t of ['edit', 'withdraw', 'block', 'unschedule', 'reschedule'] as const) expect(canTransition(s, t)).toBe(false);
+      for (const t of ['edit', 'withdraw', 'block', 'unschedule', 'reschedule'] as const)
+        expect(canTransition(s, t)).toBe(false);
     }
   });
 
@@ -62,7 +65,9 @@ describe('destination state machine', () => {
     const targets = edges('needs_reconciliation');
     expect(targets.map(([, to]) => to)).not.toContain('dispatching');
     expect(targets.map(([, to]) => to)).not.toContain('preparing');
-    expect(targets.filter(([, to]) => to === 'scheduled').map(([t]) => t)).toEqual(['reconciled_not_sent']);
+    expect(targets.filter(([, to]) => to === 'scheduled').map(([t]) => t)).toEqual([
+      'reconciled_not_sent',
+    ]);
     expect(canTransition('needs_reconciliation', 'retry')).toBe(false);
   });
 
@@ -92,7 +97,12 @@ describe('destination state machine', () => {
 describe('rollupStates', () => {
   it('summarises uniform, empty and mixed posts', () => {
     expect(rollupStates([])).toEqual({ kind: 'empty', label: 'No destinations' });
-    expect(rollupStates(['published', 'published'])).toEqual({ kind: 'uniform', state: 'published', label: 'Published', total: 2 });
+    expect(rollupStates(['published', 'published'])).toEqual({
+      kind: 'uniform',
+      state: 'published',
+      label: 'Published',
+      total: 2,
+    });
     const mixed = rollupStates(['published', 'needs_reconciliation', 'published', 'failed']);
     expect(mixed).toMatchObject({ kind: 'mixed', total: 4, attention: 'needs_reconciliation' });
     expect(mixed.label).toBe('Mixed: 2 published, 1 outcome unknown, 1 failed');

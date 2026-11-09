@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChartColumn } from 'lucide-react';
-import { CONTENT_FORMATS, DESTINATION_PROVIDERS, PROVIDER_LABELS, VISIBILITY_LABELS, type Visibility } from '@relay/domain';
+import {
+  CONTENT_FORMATS,
+  DESTINATION_PROVIDERS,
+  PROVIDER_LABELS,
+  VISIBILITY_LABELS,
+  type Visibility,
+} from '@relay/domain';
 import { getResults } from '@relay/services';
 import { Banner, Card, EmptyState, SampleBadge, SimulatedBadge } from '@relay/ui';
 import { formatDateTime, formatNumber } from '@/lib/format';
@@ -9,23 +15,45 @@ import { loadWorkspace, selectedPage } from '@/lib/server/workspace';
 
 export const metadata: Metadata = { title: 'Results' };
 
-const AGE_LABELS: Record<string, string> = { 'age:24h': 'At 24 h', 'age:72h': 'At 72 h', 'age:7d': 'At 7 days', latest: 'Latest' };
+const AGE_LABELS: Record<string, string> = {
+  'age:24h': 'At 24 h',
+  'age:72h': 'At 72 h',
+  'age:7d': 'At 7 days',
+  latest: 'Latest',
+};
 
 function formatValue(value: number | null, unit: string): string {
   if (value === null) return '—';
-  if (unit === 'seconds') return value >= 3600 ? `${formatNumber(value / 3600, { maximumFractionDigits: 1 })} h` : `${formatNumber(value / 60, { maximumFractionDigits: 0 })} min`;
+  if (unit === 'seconds')
+    return value >= 3600
+      ? `${formatNumber(value / 3600, { maximumFractionDigits: 1 })} h`
+      : `${formatNumber(value / 60, { maximumFractionDigits: 0 })} min`;
   if (unit === 'ratio') return formatNumber(value, { style: 'percent', maximumFractionDigits: 1 });
   return formatNumber(value, { maximumFractionDigits: 0 });
 }
 
-export default async function ResultsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ page?: string; provider?: string; format?: string }> }) {
+export default async function ResultsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ page?: string; provider?: string; format?: string }>;
+}) {
   const { slug } = await params;
   const sp = await searchParams;
   const wc = await loadWorkspace(slug);
   const page = selectedPage(wc, sp.page);
-  const provider = (DESTINATION_PROVIDERS as readonly string[]).includes(sp.provider ?? '') ? sp.provider : undefined;
-  const format = (CONTENT_FORMATS as readonly string[]).includes(sp.format ?? '') ? sp.format : undefined;
-  const results = await getResults(wc.ctx, wc.user, wc.workspace.id, { ...(page ? { pageId: page.id } : {}), ...(provider ? { provider } : {}), ...(format ? { format } : {}) });
+  const provider = (DESTINATION_PROVIDERS as readonly string[]).includes(sp.provider ?? '')
+    ? sp.provider
+    : undefined;
+  const format = (CONTENT_FORMATS as readonly string[]).includes(sp.format ?? '')
+    ? sp.format
+    : undefined;
+  const results = await getResults(wc.ctx, wc.user, wc.workspace.id, {
+    ...(page ? { pageId: page.id } : {}),
+    ...(provider ? { provider } : {}),
+    ...(format ? { format } : {}),
+  });
   const zone = page?.timezone ?? results.zone;
   const latestDefs = results.definitions;
   return (
@@ -33,41 +61,71 @@ export default async function ResultsPage({ params, searchParams }: { params: Pr
       <div className="app-page-header">
         <div>
           <h1>Results</h1>
-          <p>{page?.name ?? 'All pages'} · {results.totals.publications} published post{results.totals.publications === 1 ? '' : 's'}</p>
+          <p>
+            {page?.name ?? 'All pages'} · {results.totals.publications} published post
+            {results.totals.publications === 1 ? '' : 's'}
+          </p>
         </div>
       </div>
       <form className="r-row" method="get" aria-label="Filter results">
         {page ? <input type="hidden" name="page" value={page.id} /> : null}
         <label className="r-row-tight r-small">
           <span>Platform</span>
-          <select className="r-select" style={{ width: 'auto' }} name="provider" defaultValue={provider ?? ''}>
+          <select
+            className="r-select"
+            style={{ width: 'auto' }}
+            name="provider"
+            defaultValue={provider ?? ''}
+          >
             <option value="">All platforms</option>
-            {DESTINATION_PROVIDERS.map((p) => <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>)}
+            {DESTINATION_PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {PROVIDER_LABELS[p]}
+              </option>
+            ))}
           </select>
         </label>
         <label className="r-row-tight r-small">
           <span>Format</span>
-          <select className="r-select" style={{ width: 'auto' }} name="format" defaultValue={format ?? ''}>
+          <select
+            className="r-select"
+            style={{ width: 'auto' }}
+            name="format"
+            defaultValue={format ?? ''}
+          >
             <option value="">All formats</option>
-            {CONTENT_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+            {CONTENT_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
           </select>
         </label>
-        <button type="submit" className="r-button r-button--secondary">Apply</button>
+        <button type="submit" className="r-button r-button--secondary">
+          Apply
+        </button>
       </form>
 
       {results.totals.simulated > 0 ? (
         <Banner tone="info" title="Simulated data">
-          {results.totals.simulated} of these posts went to simulated accounts. Their metrics are synthetic, generated by Relay’s provider simulator, and are never combined with live platform metrics.
+          {results.totals.simulated} of these posts went to simulated accounts. Their metrics are
+          synthetic, generated by Relay’s provider simulator, and are never combined with live
+          platform metrics.
         </Banner>
       ) : null}
 
       {results.publications.length === 0 ? (
-        <EmptyState icon={<ChartColumn aria-hidden />} title="No published posts yet">Results appear after a destination confirms a publication.</EmptyState>
+        <EmptyState icon={<ChartColumn aria-hidden />} title="No published posts yet">
+          Results appear after a destination confirms a publication.
+        </EmptyState>
       ) : (
         <>
           <section className="r-stack" aria-labelledby="cmp-heading">
             <h2 id="cmp-heading">Comparisons at the same age</h2>
-            <p className="r-small r-muted">Each panel compares one metric definition only. Medians use posts that reported a value; coverage shows how many did.</p>
+            <p className="r-small r-muted">
+              Each panel compares one metric definition only. Medians use posts that reported a
+              value; coverage shows how many did.
+            </p>
             <div className="metric-grid">
               {results.panels.map((panel) => (
                 <Card key={panel.definition.id} className="r-stack-sm">
@@ -81,9 +139,23 @@ export default async function ResultsPage({ params, searchParams }: { params: Pr
                       <div key={age.ageKey} style={{ display: 'contents' }}>
                         <dt>{AGE_LABELS[age.ageKey]}</dt>
                         <dd className="r-tabular">
-                          {age.median === null ? <span className="r-muted">No data</span> : <span className="r-strong">{formatValue(age.median, panel.definition.unit)}</span>}
-                          <span className="r-xs r-muted"> · {age.available}/{age.cohortSize} reported</span>
-                          {age.unavailableReasons.length ? <span className="r-xs r-muted"> · {age.unavailableReasons.join('; ')}</span> : null}
+                          {age.median === null ? (
+                            <span className="r-muted">No data</span>
+                          ) : (
+                            <span className="r-strong">
+                              {formatValue(age.median, panel.definition.unit)}
+                            </span>
+                          )}
+                          <span className="r-xs r-muted">
+                            {' '}
+                            · {age.available}/{age.cohortSize} reported
+                          </span>
+                          {age.unavailableReasons.length ? (
+                            <span className="r-xs r-muted">
+                              {' '}
+                              · {age.unavailableReasons.join('; ')}
+                            </span>
+                          ) : null}
                         </dd>
                       </div>
                     ))}
@@ -99,9 +171,15 @@ export default async function ResultsPage({ params, searchParams }: { params: Pr
               <table className="r-table">
                 <thead>
                   <tr>
-                    <th scope="col" className="col-post">Post</th>
+                    <th scope="col" className="col-post">
+                      Post
+                    </th>
                     <th scope="col">Published ({zone})</th>
-                    {latestDefs.map((d) => <th key={d.id} scope="col" className="r-num">{d.label.replace(' (simulated)', '')}</th>)}
+                    {latestDefs.map((d) => (
+                      <th key={d.id} scope="col" className="r-num">
+                        {d.label.replace(' (simulated)', '')}
+                      </th>
+                    ))}
                     <th scope="col">As of</th>
                   </tr>
                 </thead>
@@ -110,21 +188,45 @@ export default async function ResultsPage({ params, searchParams }: { params: Pr
                     <tr key={p.id}>
                       <td className="col-post">
                         <div className="r-stack-sm" style={{ gap: 2 }}>
-                          <Link className="r-strong" href={`/w/${slug}/posts/${p.postId}`}>{p.title ?? (p.caption?.slice(0, 50) || 'Untitled post')}</Link>
-                          <span className="r-xs r-muted">{p.destinationLabel} · {p.format} · {VISIBILITY_LABELS[p.visibility as Visibility]}</span>
-                          <span className="r-row-tight">{p.simulated ? <SimulatedBadge /> : null}{p.postIsSample ? <SampleBadge /> : null}</span>
+                          <Link className="r-strong" href={`/w/${slug}/posts/${p.postId}`}>
+                            {p.title ?? (p.caption?.slice(0, 50) || 'Untitled post')}
+                          </Link>
+                          <span className="r-xs r-muted">
+                            {p.destinationLabel} · {p.format} ·{' '}
+                            {VISIBILITY_LABELS[p.visibility as Visibility]}
+                          </span>
+                          <span className="r-row-tight">
+                            {p.simulated ? <SimulatedBadge /> : null}
+                            {p.postIsSample ? <SampleBadge /> : null}
+                          </span>
                         </div>
                       </td>
                       <td className="r-tabular r-nowrap">{formatDateTime(p.publishedAt, zone)}</td>
                       {latestDefs.map((d) => {
-                        const cell = p.metrics[d.id]?.latest ?? p.metrics[d.id]?.['age:7d'] ?? p.metrics[d.id]?.['age:72h'] ?? p.metrics[d.id]?.['age:24h'];
+                        const cell =
+                          p.metrics[d.id]?.latest ??
+                          p.metrics[d.id]?.['age:7d'] ??
+                          p.metrics[d.id]?.['age:72h'] ??
+                          p.metrics[d.id]?.['age:24h'];
                         return (
                           <td key={d.id} className="r-num">
-                            {!cell ? <span className="r-muted" title="Not synced yet">—</span> : cell.availability === 'available' ? formatValue(cell.value, d.unit) : <span className="r-xs r-muted" title={cell.availabilityLabel}>{cell.availabilityLabel}</span>}
+                            {!cell ? (
+                              <span className="r-muted" title="Not synced yet">
+                                —
+                              </span>
+                            ) : cell.availability === 'available' ? (
+                              formatValue(cell.value, d.unit)
+                            ) : (
+                              <span className="r-xs r-muted" title={cell.availabilityLabel}>
+                                {cell.availabilityLabel}
+                              </span>
+                            )}
                           </td>
                         );
                       })}
-                      <td className="r-xs r-muted r-nowrap">{p.asOf ? formatDateTime(p.asOf, zone) : 'Not synced yet'}</td>
+                      <td className="r-xs r-muted r-nowrap">
+                        {p.asOf ? formatDateTime(p.asOf, zone) : 'Not synced yet'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

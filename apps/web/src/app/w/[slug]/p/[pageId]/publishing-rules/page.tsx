@@ -9,7 +9,11 @@ import { loadWorkspace } from '@/lib/server/workspace';
 
 export const metadata: Metadata = { title: 'Publishing rules' };
 
-export default async function RulesPage({ params }: { params: Promise<{ slug: string; pageId: string }> }) {
+export default async function RulesPage({
+  params,
+}: {
+  params: Promise<{ slug: string; pageId: string }>;
+}) {
   const { slug, pageId } = await params;
   if (!isUuid(pageId)) notFound();
   const wc = await loadWorkspace(slug);
@@ -26,7 +30,10 @@ export default async function RulesPage({ params }: { params: Promise<{ slug: st
       <div className="app-page-header">
         <div>
           <h1>Publishing rules · {detail.page.name}</h1>
-          <p>Times use {detail.page.timezone}. Every save creates a new immutable revision; schedules keep the instant they were given.</p>
+          <p>
+            Times use {detail.page.timezone}. Every save creates a new immutable revision; schedules
+            keep the instant they were given.
+          </p>
         </div>
       </div>
       <PauseControl
@@ -37,12 +44,21 @@ export default async function RulesPage({ params }: { params: Promise<{ slug: st
         canPause={can(wc.member.role, 'page.pause')}
         canResume={can(wc.member.role, 'page.resume')}
       />
-      <RulesForm workspaceId={wc.workspace.id} pageId={pageId} revision={detail.revision} rules={detail.rules} canEdit={canEdit} canAutomate={['owner', 'admin'].includes(wc.member.role)} />
+      <RulesForm
+        workspaceId={wc.workspace.id}
+        pageId={pageId}
+        revision={detail.revision}
+        rules={detail.rules}
+        canEdit={canEdit}
+        canAutomate={['owner', 'admin'].includes(wc.member.role)}
+      />
       <Card className="r-stack-sm">
         <h2>Revision history</h2>
         <ol className="r-small" style={{ margin: 0, paddingLeft: 20 }}>
           {detail.revisions.map((r) => (
-            <li key={r.revision}>Revision {r.revision} · {formatDateTime(r.createdAt, detail.page.timezone)}</li>
+            <li key={r.revision}>
+              Revision {r.revision} · {formatDateTime(r.createdAt, detail.page.timezone)}
+            </li>
           ))}
         </ol>
       </Card>

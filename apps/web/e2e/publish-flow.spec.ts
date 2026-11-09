@@ -10,7 +10,10 @@ test.describe('M1 gate: upload → approval → schedule → worker → confirme
     // Upload: real presigned PUT to object storage, then validation by the media worker.
     await page.goto('/w/fernhill/upload');
     await page.getByLabel('Page', { exact: true }).selectOption({ label: 'Fernhill Coffee' });
-    await page.setInputFiles('[data-testid="file-input"]', path.join(FIXTURES, 'vertical-1080x1920-8s.mp4'));
+    await page.setInputFiles(
+      '[data-testid="file-input"]',
+      path.join(FIXTURES, 'vertical-1080x1920-8s.mp4'),
+    );
     await page.getByRole('checkbox', { name: /I own this media/ }).check();
     await page.getByRole('button', { name: /Upload 1 file/ }).click();
     await expect(page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 120_000 });
@@ -47,7 +50,9 @@ test.describe('M1 gate: upload → approval → schedule → worker → confirme
     await expect(dialog).toBeHidden();
 
     // The worker prepares, waits for the planned time, dispatches and confirms.
-    await expect(yt.locator('.r-badge', { hasText: 'Published' })).toBeVisible({ timeout: 120_000 });
+    await expect(yt.locator('.r-badge', { hasText: 'Published' })).toBeVisible({
+      timeout: 120_000,
+    });
     await expect(yt.getByText(/sim_youtube_[0-9a-f]{12}/)).toBeVisible();
     await expect(yt.getByText(/simulated — not a real post/)).toBeVisible();
     await expect(page.getByText('Published (confirmed by platform)')).toBeVisible();
@@ -57,7 +62,9 @@ test.describe('M1 gate: upload → approval → schedule → worker → confirme
 
     // It shows in the calendar as published and in Results as simulated data.
     await page.goto('/w/fernhill/calendar');
-    await expect(page.getByTestId('calendar-item').filter({ hasText: 'E2E · Cold brew ratio' }).first()).toContainText('Published');
+    await expect(
+      page.getByTestId('calendar-item').filter({ hasText: 'E2E · Cold brew ratio' }).first(),
+    ).toContainText('Published');
     await page.goto('/w/fernhill/results');
     await expect(page.getByRole('link', { name: 'E2E · Cold brew ratio' })).toBeVisible();
     await expect(page.getByText('Simulated data')).toBeVisible();
@@ -72,7 +79,9 @@ test.describe('M1 gate: upload → approval → schedule → worker → confirme
     await expect(yt.locator('.r-badge', { hasText: 'Approved' })).toBeVisible();
     await yt.getByRole('button', { name: 'Schedule' }).click();
     const dialog = page.getByRole('dialog', { name: 'Schedule post' });
-    await expect(dialog.getByText('Suggestions are not reserved until you schedule.', { exact: false })).toBeVisible();
+    await expect(
+      dialog.getByText('Suggestions are not reserved until you schedule.', { exact: false }),
+    ).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(yt.locator('.r-badge', { hasText: 'Approved' })).toBeVisible(); // still not scheduled
   });

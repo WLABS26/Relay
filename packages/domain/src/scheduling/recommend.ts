@@ -1,4 +1,11 @@
-import { addDays, formatHHmm, isoWeekdayOf, localDate, minutesOfDay, resolveCivilTime } from '../time';
+import {
+  addDays,
+  formatHHmm,
+  isoWeekdayOf,
+  localDate,
+  minutesOfDay,
+  resolveCivilTime,
+} from '../time';
 import { evaluateSlot, type SlotContext } from './constraints';
 import { DEFAULT_POSTING_WINDOWS, windowsFor, type PostingWindow } from './rules';
 
@@ -97,15 +104,24 @@ export function recommendSlots(input: RecommendInput): RecommendResult {
         const sameDay = existingPerDay.get(day) ?? 0;
         const reasons = [`Inside your “${window.label}” posting window`];
         if (sameDay === 0) reasons.push('No other posts on this account that day');
-        else reasons.push(`${sameDay} other post${sameDay === 1 ? '' : 's'} that day; spacing rules respected`);
-        if (rules.minGapMinutes > 0) reasons.push(`Keeps the ${rules.minGapMinutes}-minute minimum gap`);
+        else
+          reasons.push(
+            `${sameDay} other post${sameDay === 1 ? '' : 's'} that day; spacing rules respected`,
+          );
+        if (rules.minGapMinutes > 0)
+          reasons.push(`Keeps the ${rules.minGapMinutes}-minute minimum gap`);
         if (resolution.kind === 'ambiguous') {
-          reasons.push(`Clocks go back that night; this is the first ${civil.slice(11, 16)} (${zoned.offset})`);
+          reasons.push(
+            `Clocks go back that night; this is the first ${civil.slice(11, 16)} (${zoned.offset})`,
+          );
         }
         // Prefer high-priority windows, lightly loaded days and sooner dates; earliest minute
         // in a window breaks ties. Fully deterministic for identical input.
         const score =
-          window.priority * 10 - sameDay * 4 - offsetDays * 0.5 - (m - minutesOfDay(window.start)) / 600;
+          window.priority * 10 -
+          sameDay * 4 -
+          offsetDays * 0.5 -
+          (m - minutesOfDay(window.start)) / 600;
         candidates.push({
           slotAt,
           civil: zoned.civil,
@@ -156,7 +172,11 @@ export function recommendSlots(input: RecommendInput): RecommendResult {
   }));
 
   const fallbackReason =
-    suggestions.length === 0 ? 'no_slot_satisfies_constraints' : usingDefaults ? 'no_posting_windows' : null;
+    suggestions.length === 0
+      ? 'no_slot_satisfies_constraints'
+      : usingDefaults
+        ? 'no_posting_windows'
+        : null;
   const explanation =
     suggestions.length === 0
       ? `No time in the next ${horizonDays} days satisfies this page's posting windows, quiet hours and pacing limits. Pick a custom time or adjust the publishing rules.`

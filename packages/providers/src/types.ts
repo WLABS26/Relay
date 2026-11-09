@@ -18,7 +18,13 @@ import type {
 
 export type PublishPhase = 'prepare' | 'transfer' | 'wait_processing' | 'dispatch' | 'confirm';
 
-export const PUBLISH_PHASES: readonly PublishPhase[] = ['prepare', 'transfer', 'wait_processing', 'dispatch', 'confirm'];
+export const PUBLISH_PHASES: readonly PublishPhase[] = [
+  'prepare',
+  'transfer',
+  'wait_processing',
+  'dispatch',
+  'confirm',
+];
 
 export interface PublishCheckpoint {
   phase: PublishPhase;
@@ -174,7 +180,11 @@ export interface MetricsAdapter {
   readonly sourcePolicy: string;
   fetchPostMetrics(input: {
     account: ConnectedAccount;
-    publication: { externalId: string; publishedAt: string; format: 'video' | 'image' | 'carousel' };
+    publication: {
+      externalId: string;
+      publishedAt: string;
+      format: 'video' | 'image' | 'carousel';
+    };
     ageBucket: AgeBucket | null;
     now: Date;
   }): Promise<MetricReading[]>;

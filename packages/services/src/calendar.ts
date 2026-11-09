@@ -8,7 +8,13 @@ import {
   type DestinationState,
   type WeekStart,
 } from '@relay/domain';
-import { accessiblePageIds, authorize, inWorkspace, requirePage, type AuthenticatedUser } from './access';
+import {
+  accessiblePageIds,
+  authorize,
+  inWorkspace,
+  requirePage,
+  type AuthenticatedUser,
+} from './access';
 import { thumbnailUrls } from './assets';
 import type { ServiceContext } from './context';
 
@@ -17,11 +23,20 @@ import type { ServiceContext } from './context';
  * range, displayed in the page (or requested) zone. Proposals are not stored here — the UI
  * draws them separately and labels them as suggestions.
  */
-export async function getCalendar(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, rawQuery: unknown) {
+export async function getCalendar(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  rawQuery: unknown,
+) {
   const query = calendarQuerySchema.parse(rawQuery);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'workspace.view');
-    const workspace = await tx.selectFrom('workspaces').select(['timezone', 'weekStart']).where('id', '=', workspaceId).executeTakeFirstOrThrow();
+    const workspace = await tx
+      .selectFrom('workspaces')
+      .select(['timezone', 'weekStart'])
+      .where('id', '=', workspaceId)
+      .executeTakeFirstOrThrow();
     let zone = workspace.timezone;
     let weekStart = workspace.weekStart as WeekStart;
     if (query.pageId) {
@@ -45,13 +60,38 @@ export async function getCalendar(ctx: ServiceContext, user: AuthenticatedUser, 
       .innerJoin('publishIntents as i', 'i.id', 's.intentId')
       .leftJoin('postRevisions as r', 'r.id', 'i.revisionId')
       .leftJoin('externalPublications as e', 'e.postDestinationId', 'pd.id')
-      .leftJoin('postRevisionMedia as rm', (j) => j.onRef('rm.revisionId', '=', 'i.revisionId').on('rm.position', '=', 0))
-      .leftJoin('postRevisionVariants as v', (j) => j.onRef('v.revisionId', '=', 'i.revisionId').onRef('v.postDestinationId', '=', 'pd.id'))
+      .leftJoin('postRevisionMedia as rm', (j) =>
+        j.onRef('rm.revisionId', '=', 'i.revisionId').on('rm.position', '=', 0),
+      )
+      .leftJoin('postRevisionVariants as v', (j) =>
+        j.onRef('v.revisionId', '=', 'i.revisionId').onRef('v.postDestinationId', '=', 'pd.id'),
+      )
       .select([
-        'pd.id as postDestinationId', 'pd.state', 'pd.stateReason', 'pd.version', 'p.id as postId', 'p.title', 'p.isSample',
-        'pg.id as pageId', 'pg.name as pageName', 'd.id as destinationId', 'd.label as destinationLabel', 'd.provider',
-        'a.connectionMode', 'a.displayName as accountName', 's.slotAt', 's.locked', 's.status as reservationStatus',
-        'i.civilLocal', 'i.civilOffset', 'i.civilZone', 'i.dispatchMode', 'r.caption', 'e.publishedAt', 'e.permalink', 'rm.assetId',
+        'pd.id as postDestinationId',
+        'pd.state',
+        'pd.stateReason',
+        'pd.version',
+        'p.id as postId',
+        'p.title',
+        'p.isSample',
+        'pg.id as pageId',
+        'pg.name as pageName',
+        'd.id as destinationId',
+        'd.label as destinationLabel',
+        'd.provider',
+        'a.connectionMode',
+        'a.displayName as accountName',
+        's.slotAt',
+        's.locked',
+        's.status as reservationStatus',
+        'i.civilLocal',
+        'i.civilOffset',
+        'i.civilZone',
+        'i.dispatchMode',
+        'r.caption',
+        'e.publishedAt',
+        'e.permalink',
+        'rm.assetId',
         'v.visibility',
       ])
       .where('s.status', 'in', ['active', 'consumed'])
@@ -60,9 +100,19 @@ export async function getCalendar(ctx: ServiceContext, user: AuthenticatedUser, 
       .orderBy('s.slotAt');
     if (query.pageId) q = q.where('p.pageId', '=', query.pageId);
     if (query.destinationId) q = q.where('d.id', '=', query.destinationId);
-    if (visible) q = q.where('p.pageId', 'in', visible.length ? visible : ['00000000-0000-0000-0000-000000000000']);
+    if (visible)
+      q = q.where(
+        'p.pageId',
+        'in',
+        visible.length ? visible : ['00000000-0000-0000-0000-000000000000'],
+      );
     const rows = await q.execute();
-    const thumbs = await thumbnailUrls(ctx, user, workspaceId, rows.map((r) => r.assetId).filter((x): x is string => Boolean(x))).catch(() => ({}) as Record<string, string>);
+    const thumbs = await thumbnailUrls(
+      ctx,
+      user,
+      workspaceId,
+      rows.map((r) => r.assetId).filter((x): x is string => Boolean(x)),
+    ).catch(() => ({}) as Record<string, string>);
     const items = rows.map((r) => {
       const local = instantToZoned(r.slotAt, zone);
       return {
@@ -98,6 +148,14 @@ export async function getCalendar(ctx: ServiceContext, user: AuthenticatedUser, 
     });
     const days: string[] = [];
     for (let d = query.from; d <= query.to; d = addDays(d, 1)) days.push(d);
-    return { zone, weekStart, from: query.from, to: query.to, today: localDate(ctx.clock.now(), zone), days, items };
+    return {
+      zone,
+      weekStart,
+      from: query.from,
+      to: query.to,
+      today: localDate(ctx.clock.now(), zone),
+      days,
+      items,
+    };
   });
 }

@@ -10,15 +10,28 @@ import { generateFixtures } from '@relay/media/fixtures';
 export default async function setup(): Promise<void> {
   loadDotEnv();
   const migrator = process.env.DATABASE_URL_MIGRATOR;
-  if (!migrator) throw new Error('DATABASE_URL_MIGRATOR is not set. Copy .env.example to .env and run `pnpm infra:up`.');
+  if (!migrator)
+    throw new Error(
+      'DATABASE_URL_MIGRATOR is not set. Copy .env.example to .env and run `pnpm infra:up`.',
+    );
   try {
-    await recreateDatabase({ migratorUrl: withDatabase(migrator, 'relay_test'), database: 'relay_test', logger: { info: () => {}, warn: console.warn } });
+    await recreateDatabase({
+      migratorUrl: withDatabase(migrator, 'relay_test'),
+      database: 'relay_test',
+      logger: { info: () => {}, warn: console.warn },
+    });
   } catch (error) {
-    throw new Error(`Could not prepare the test database (is \`pnpm infra:up\` running?): ${(error as Error).message}`);
+    throw new Error(
+      `Could not prepare the test database (is \`pnpm infra:up\` running?): ${(error as Error).message}`,
+    );
   }
   const config = parseConfig({ ...process.env, S3_BUCKET: 'relay-test', RELAY_ENV: 'test' });
   const storage = new ObjectStorage(config.storage);
-  await storage.ensureBucket(['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3100']);
+  await storage.ensureBucket([
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3100',
+  ]);
   const manifest = path.join(REPO_ROOT, 'fixtures/media/manifest.json');
   if (!existsSync(manifest)) await generateFixtures({ outDir: path.dirname(manifest) });
 }

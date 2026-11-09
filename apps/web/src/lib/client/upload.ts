@@ -22,13 +22,22 @@ export interface UploadProgress {
   total: number;
 }
 
-function putWithProgress(url: string, body: Blob, headers: Record<string, string>, onProgress: (loaded: number) => void, signal?: AbortSignal): Promise<string | null> {
+function putWithProgress(
+  url: string,
+  body: Blob,
+  headers: Record<string, string>,
+  onProgress: (loaded: number) => void,
+  signal?: AbortSignal,
+): Promise<string | null> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => onProgress(e.loaded);
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve(xhr.getResponseHeader('ETag')) : reject(new Error(`Storage refused the upload (${xhr.status}).`)));
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve(xhr.getResponseHeader('ETag'))
+        : reject(new Error(`Storage refused the upload (${xhr.status}).`));
     xhr.onerror = () => reject(new Error('Network error while uploading.'));
     xhr.onabort = () => reject(new DOMException('Upload canceled', 'AbortError'));
     signal?.addEventListener('abort', () => xhr.abort(), { once: true });
@@ -75,7 +84,9 @@ export async function uploadFile(input: {
     let parts: Array<{ partNumber: number; etag: string }> | undefined;
     if (start.single) {
       const single = start.single;
-      await withRetry(() => putWithProgress(single.url, input.file, single.headers, report, input.signal));
+      await withRetry(() =>
+        putWithProgress(single.url, input.file, single.headers, report, input.signal),
+      );
     } else if (start.multipart) {
       const { partSize, partCount } = start.multipart;
       const loadedByPart = new Map<number, number>();
@@ -84,20 +95,34 @@ export async function uploadFile(input: {
       const queue = Array.from({ length: partCount }, (_, i) => i + 1);
       const concurrency = Math.min(4, partCount);
       const signBatch = async (numbers: number[]) =>
-        apiFetch<{ parts: Array<{ partNumber: number; url: string; size: number }> }>(`${base}/uploads/${start.uploadId}/parts`, { body: { partNumbers: numbers } });
+        apiFetch<{ parts: Array<{ partNumber: number; url: string; size: number }> }>(
+          `${base}/uploads/${start.uploadId}/parts`,
+          { body: { partNumbers: numbers } },
+        );
       const workerLoop = async () => {
         for (;;) {
           const next = queue.shift();
           if (next === undefined) return;
           const etag = await withRetry(async () => {
-            const { parts: [signed] } = await signBatch([next]);
+            const {
+              parts: [signed],
+            } = await signBatch([next]);
             const blob = input.file.slice((next - 1) * partSize, Math.min(next * partSize, total));
-            return putWithProgress(signed!.url, blob, {}, (loaded) => {
-              loadedByPart.set(next, loaded);
-              report(sum());
-            }, input.signal);
+            return putWithProgress(
+              signed!.url,
+              blob,
+              {},
+              (loaded) => {
+                loadedByPart.set(next, loaded);
+                report(sum());
+              },
+              input.signal,
+            );
           });
-          if (!etag) throw new Error('Storage did not return a part ETag (check bucket CORS ExposeHeaders).');
+          if (!etag)
+            throw new Error(
+              'Storage did not return a part ETag (check bucket CORS ExposeHeaders).',
+            );
           parts!.push({ partNumber: next, etag });
         }
       };
@@ -105,10 +130,15 @@ export async function uploadFile(input: {
       parts.sort((a, b) => a.partNumber - b.partNumber);
     }
     report(total);
-    const done = await apiFetch<{ assetId: string; jobId: string | null }>(`${base}/uploads/${start.uploadId}/complete`, { body: parts ? { parts } : {} });
+    const done = await apiFetch<{ assetId: string; jobId: string | null }>(
+      `${base}/uploads/${start.uploadId}/complete`,
+      { body: parts ? { parts } : {} },
+    );
     return { assetId: done.assetId, uploadId: start.uploadId, jobId: done.jobId };
   } catch (error) {
-    await apiFetch(`${base}/uploads/${start.uploadId}`, { method: 'DELETE' }).catch(() => undefined);
+    await apiFetch(`${base}/uploads/${start.uploadId}`, { method: 'DELETE' }).catch(
+      () => undefined,
+    );
     throw error;
   }
 }

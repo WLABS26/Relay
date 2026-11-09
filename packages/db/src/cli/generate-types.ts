@@ -17,28 +17,46 @@ if (!url) {
 }
 const check = process.argv.includes('--check');
 const database = 'relay_codegen';
-await recreateDatabase({ migratorUrl: url, database, logger: { info: () => {}, warn: console.warn } });
+await recreateDatabase({
+  migratorUrl: url,
+  database,
+  logger: { info: () => {}, warn: console.warn },
+});
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outFile = path.resolve(here, '../generated/db.ts');
 const args = [
   'kysely-codegen',
-  '--dialect', 'postgres',
-  '--url', withDatabase(url, database),
+  '--dialect',
+  'postgres',
+  '--url',
+  withDatabase(url, database),
   '--camel-case',
-  '--date-parser', 'string',
-  '--numeric-parser', 'string',
-  '--type-mapping', JSON.stringify({ int8: 'number' }),
-  '--include-pattern', '{public,provider_sim}.*',
-  '--exclude-pattern', 'public.relay_schema_migrations',
-  '--default-schema', 'public',
-  '--out-file', outFile,
-  '--log-level', 'warn',
+  '--date-parser',
+  'string',
+  '--numeric-parser',
+  'string',
+  '--type-mapping',
+  JSON.stringify({ int8: 'number' }),
+  '--include-pattern',
+  '{public,provider_sim}.*',
+  '--exclude-pattern',
+  'public.relay_schema_migrations',
+  '--default-schema',
+  'public',
+  '--out-file',
+  outFile,
+  '--log-level',
+  'warn',
 ];
 if (check) args.push('--verify');
 try {
   execFileSync('npx', args, { stdio: 'inherit', cwd: path.resolve(here, '../..') });
   console.log(check ? '[types] generated types are up to date' : `[types] wrote ${outFile}`);
 } catch {
-  console.error(check ? '[types] generated types are OUT OF DATE — run `pnpm db:types`' : '[types] generation failed');
+  console.error(
+    check
+      ? '[types] generated types are OUT OF DATE — run `pnpm db:types`'
+      : '[types] generation failed',
+  );
   process.exit(1);
 }

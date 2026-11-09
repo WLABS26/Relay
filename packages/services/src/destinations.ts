@@ -32,7 +32,10 @@ export async function transitionDestination(
     .returning(['version'])
     .executeTakeFirst();
   if (!row) {
-    throw new AppError('version_conflict', 'This destination changed while you were working on it. Reload and try again.');
+    throw new AppError(
+      'version_conflict',
+      'This destination changed while you were working on it. Reload and try again.',
+    );
   }
   return { to, version: row.version };
 }
@@ -42,9 +45,24 @@ export async function lockForScheduling(
   tx: Tx,
   ids: { socialAccountId: string; pageId: string; postDestinationId: string },
 ) {
-  const account = await tx.selectFrom('socialAccounts').selectAll().where('id', '=', ids.socialAccountId).forUpdate().executeTakeFirstOrThrow();
-  const page = await tx.selectFrom('pages').selectAll().where('id', '=', ids.pageId).forShare().executeTakeFirstOrThrow();
-  const destination = await tx.selectFrom('postDestinations').selectAll().where('id', '=', ids.postDestinationId).forUpdate().executeTakeFirstOrThrow();
+  const account = await tx
+    .selectFrom('socialAccounts')
+    .selectAll()
+    .where('id', '=', ids.socialAccountId)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
+  const page = await tx
+    .selectFrom('pages')
+    .selectAll()
+    .where('id', '=', ids.pageId)
+    .forShare()
+    .executeTakeFirstOrThrow();
+  const destination = await tx
+    .selectFrom('postDestinations')
+    .selectAll()
+    .where('id', '=', ids.postDestinationId)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
   return { account, page, destination };
 }
 
@@ -54,7 +72,14 @@ export async function destinationRefs(tx: Tx, postDestinationId: string) {
     .selectFrom('postDestinations as pd')
     .innerJoin('posts as p', 'p.id', 'pd.postId')
     .innerJoin('pageDestinations as d', 'd.id', 'pd.pageDestinationId')
-    .select(['pd.id', 'pd.postId', 'p.pageId', 'd.socialAccountId', 'd.provider', 'p.currentRevisionId'])
+    .select([
+      'pd.id',
+      'pd.postId',
+      'p.pageId',
+      'd.socialAccountId',
+      'd.provider',
+      'p.currentRevisionId',
+    ])
     .where('pd.id', '=', postDestinationId)
     .executeTakeFirst();
 }

@@ -15,12 +15,22 @@ export async function GET(req: NextRequest) {
       previousToken: req.cookies.get(ctx.config.session.cookieName)?.value ?? null,
     });
     const response = NextResponse.redirect(new URL(returnTo, ctx.config.publicUrl), 302);
-    for (const c of sessionCookies(session)) response.cookies.set(c.name, c.value, { httpOnly: c.httpOnly, secure: c.secure, sameSite: c.sameSite, path: c.path, maxAge: c.maxAge });
+    for (const c of sessionCookies(session))
+      response.cookies.set(c.name, c.value, {
+        httpOnly: c.httpOnly,
+        secure: c.secure,
+        sameSite: c.sameSite,
+        path: c.path,
+        maxAge: c.maxAge,
+      });
     response.cookies.set('relay_oidc_attempt', '', { path: '/api/auth/oidc', maxAge: 0 });
     return response;
   } catch (error) {
     ctx.logger.warn({ err: safeError(error) }, 'oidc callback failed');
     const message = isAppError(error) ? error.message : 'Sign-in failed. Please try again.';
-    return NextResponse.redirect(new URL(`/sign-in?error=${encodeURIComponent(message)}`, ctx.config.publicUrl), 302);
+    return NextResponse.redirect(
+      new URL(`/sign-in?error=${encodeURIComponent(message)}`, ctx.config.publicUrl),
+      302,
+    );
   }
 }

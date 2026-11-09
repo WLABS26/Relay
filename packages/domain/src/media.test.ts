@@ -14,7 +14,9 @@ import {
 } from './media';
 
 const bytes = (...parts: Array<number[] | string>) =>
-  Uint8Array.from(parts.flatMap((p) => (typeof p === 'string' ? [...p].map((c) => c.charCodeAt(0)) : p)));
+  Uint8Array.from(
+    parts.flatMap((p) => (typeof p === 'string' ? [...p].map((c) => c.charCodeAt(0)) : p)),
+  );
 
 describe('sniffContainer', () => {
   it.each<[string, Uint8Array, string]>([
@@ -58,10 +60,39 @@ describe('upload names and types', () => {
   });
 });
 
-const caps: MediaCaps = { maxVideoDurationMs: 60_000, maxVideoDimension: 3840, maxImagePixels: 50_000_000, maxStreams: 4 };
-const video = (s: Partial<ProbeStream> = {}): ProbeStream => ({ index: 0, type: 'video', codec: 'h264', codecTag: 'avc1', width: 1920, height: 1080, avgFrameRate: 30, realFrameRate: 30, ...s });
-const audio = (s: Partial<ProbeStream> = {}): ProbeStream => ({ index: 1, type: 'audio', codec: 'aac', codecTag: 'mp4a', ...s });
-const probe = (streams: ProbeStream[], p: Partial<ProbeSummary> = {}): ProbeSummary => ({ formatName: 'mov,mp4', durationMs: 8000, startTimeMs: 0, bitRate: 1, streams, encrypted: false, ...p });
+const caps: MediaCaps = {
+  maxVideoDurationMs: 60_000,
+  maxVideoDimension: 3840,
+  maxImagePixels: 50_000_000,
+  maxStreams: 4,
+};
+const video = (s: Partial<ProbeStream> = {}): ProbeStream => ({
+  index: 0,
+  type: 'video',
+  codec: 'h264',
+  codecTag: 'avc1',
+  width: 1920,
+  height: 1080,
+  avgFrameRate: 30,
+  realFrameRate: 30,
+  ...s,
+});
+const audio = (s: Partial<ProbeStream> = {}): ProbeStream => ({
+  index: 1,
+  type: 'audio',
+  codec: 'aac',
+  codecTag: 'mp4a',
+  ...s,
+});
+const probe = (streams: ProbeStream[], p: Partial<ProbeSummary> = {}): ProbeSummary => ({
+  formatName: 'mov,mp4',
+  durationMs: 8000,
+  startTimeMs: 0,
+  bitRate: 1,
+  streams,
+  encrypted: false,
+  ...p,
+});
 const failure = (kind: 'video' | 'image', p: ProbeSummary) => {
   const r = validateProbe(kind, p, caps);
   return r.ok ? null : r.code;
@@ -70,26 +101,63 @@ const failure = (kind: 'video' | 'image', p: ProbeSummary) => {
 describe('validateProbe', () => {
   it('normalises a valid video, swapping dimensions for rotation', () => {
     const r = validateProbe('video', probe([video({ rotation: -90 }), audio()]), caps);
-    expect(r).toMatchObject({ ok: true, media: { width: 1080, height: 1920, rotation: 270, hasAudio: true, durationMs: 8000, variableFrameRate: false } });
+    expect(r).toMatchObject({
+      ok: true,
+      media: {
+        width: 1080,
+        height: 1920,
+        rotation: 270,
+        hasAudio: true,
+        durationMs: 8000,
+        variableFrameRate: false,
+      },
+    });
   });
 
   it('detects variable frame rate and silent video', () => {
-    const r = validateProbe('video', probe([video({ avgFrameRate: 29.2, realFrameRate: 30 })]), caps);
-    expect(r).toMatchObject({ ok: true, media: { variableFrameRate: true, hasAudio: false, audioCodec: null } });
+    const r = validateProbe(
+      'video',
+      probe([video({ avgFrameRate: 29.2, realFrameRate: 30 })]),
+      caps,
+    );
+    expect(r).toMatchObject({
+      ok: true,
+      media: { variableFrameRate: true, hasAudio: false, audioCodec: null },
+    });
   });
 
   it.each<[string, 'video' | 'image', ProbeSummary, string]>([
     ['encrypted', 'video', probe([video()], { encrypted: true }), 'encrypted_media'],
     ['no streams', 'video', probe([]), 'malformed_media'],
-    ['too many streams', 'video', probe([video(), audio(), audio(), audio(), audio()]), 'too_many_streams'],
+    [
+      'too many streams',
+      'video',
+      probe([video(), audio(), audio(), audio(), audio()]),
+      'too_many_streams',
+    ],
     ['cover art only', 'video', probe([video({ attachedPic: true }), audio()]), 'no_video_stream'],
     ['unknown video codec', 'video', probe([video({ codec: 'mpeg2video' })]), 'unsupported_codec'],
-    ['unknown audio codec', 'video', probe([video(), audio({ codec: 'dts' })]), 'unsupported_codec'],
-    ['no duration', 'video', probe([video({ durationMs: null })], { durationMs: null }), 'malformed_media'],
+    [
+      'unknown audio codec',
+      'video',
+      probe([video(), audio({ codec: 'dts' })]),
+      'unsupported_codec',
+    ],
+    [
+      'no duration',
+      'video',
+      probe([video({ durationMs: null })], { durationMs: null }),
+      'malformed_media',
+    ],
     ['too long', 'video', probe([video()], { durationMs: 60_001 }), 'too_long'],
     ['too wide', 'video', probe([video({ width: 4096, height: 2160 })]), 'dimensions_too_large'],
     ['image codec', 'image', probe([video({ codec: 'gif' })]), 'unsupported_codec'],
-    ['image pixels', 'image', probe([video({ codec: 'png', width: 10_000, height: 5_001 })]), 'dimensions_too_large'],
+    [
+      'image pixels',
+      'image',
+      probe([video({ codec: 'png', width: 10_000, height: 5_001 })]),
+      'dimensions_too_large',
+    ],
     ['no image', 'image', probe([audio()]), 'no_image_stream'],
   ])('rejects %s', (_, kind, p, code) => {
     expect(failure(kind, p)).toBe(code);
@@ -99,17 +167,54 @@ describe('validateProbe', () => {
 const profile: DestinationFormatProfile = {
   source: 'Unit test profile',
   publishMode: 'api',
-  video: { minDurationMs: 3000, maxDurationMs: 60_000, maxBytes: 100_000_000, aspect: { min: 0.5, max: 0.6 }, containers: ['mp4'] },
-  image: { maxBytes: 8_000_000, aspect: { min: 0.8, max: 1.91 }, mimes: ['image/jpeg', 'image/png'] },
+  video: {
+    minDurationMs: 3000,
+    maxDurationMs: 60_000,
+    maxBytes: 100_000_000,
+    aspect: { min: 0.5, max: 0.6 },
+    containers: ['mp4'],
+  },
+  image: {
+    maxBytes: 8_000_000,
+    aspect: { min: 0.8, max: 1.91 },
+    mimes: ['image/jpeg', 'image/png'],
+  },
   carousel: { minItems: 2, maxItems: 3, allowVideo: false },
   visibilities: ['public', 'private'],
   captionMaxLength: 10,
   title: { required: true, maxLength: 5 },
 };
-const vertical: DestinationMediaItem = { kind: 'video', mime: 'video/mp4', sizeBytes: 1000, width: 1080, height: 1920, durationMs: 8000 };
-const photo: DestinationMediaItem = { kind: 'image', mime: 'image/jpeg', sizeBytes: 1000, width: 1080, height: 1350, durationMs: null };
-const issues = (media: DestinationMediaItem[], extra: Partial<{ caption: string; title: string | null; visibility: 'public' | 'private' | 'unlisted' }> = {}) =>
-  validateForDestination(profile, { media, caption: 'ok', title: 'T', visibility: 'public', ...extra }).map((i) => i.code);
+const vertical: DestinationMediaItem = {
+  kind: 'video',
+  mime: 'video/mp4',
+  sizeBytes: 1000,
+  width: 1080,
+  height: 1920,
+  durationMs: 8000,
+};
+const photo: DestinationMediaItem = {
+  kind: 'image',
+  mime: 'image/jpeg',
+  sizeBytes: 1000,
+  width: 1080,
+  height: 1350,
+  durationMs: null,
+};
+const issues = (
+  media: DestinationMediaItem[],
+  extra: Partial<{
+    caption: string;
+    title: string | null;
+    visibility: 'public' | 'private' | 'unlisted';
+  }> = {},
+) =>
+  validateForDestination(profile, {
+    media,
+    caption: 'ok',
+    title: 'T',
+    visibility: 'public',
+    ...extra,
+  }).map((i) => i.code);
 
 describe('validateForDestination', () => {
   it('accepts content that fits the destination profile', () => {
@@ -136,7 +241,12 @@ describe('validateForDestination', () => {
   });
 
   it('validates every carousel item and says which one failed', () => {
-    const result = validateForDestination(profile, { media: [photo, { ...photo, mime: 'image/webp', sizeBytes: 9_000_000 }], caption: 'ok', title: 'T', visibility: 'public' });
+    const result = validateForDestination(profile, {
+      media: [photo, { ...photo, mime: 'image/webp', sizeBytes: 9_000_000 }],
+      caption: 'ok',
+      title: 'T',
+      visibility: 'public',
+    });
     expect(result.map((i) => [i.code, i.message])).toEqual([
       ['image_type', 'Item 2: image/webp images are not accepted here.'],
       ['image_too_large', 'Item 2: Image is too large for this destination.'],
@@ -145,14 +255,27 @@ describe('validateForDestination', () => {
 
   it('reports only carousel_unsupported when a destination takes no carousels', () => {
     const { carousel: _omit, ...noCarousel } = profile;
-    const result = validateForDestination(noCarousel, { media: [photo, { ...photo, mime: 'image/webp' }], caption: 'ok', title: 'T', visibility: 'public' });
+    const result = validateForDestination(noCarousel, {
+      media: [photo, { ...photo, mime: 'image/webp' }],
+      caption: 'ok',
+      title: 'T',
+      visibility: 'public',
+    });
     expect(result.map((i) => i.code)).toEqual(['carousel_unsupported']);
   });
 
   it('tolerates rounding in odd-sized media aspect ratios', () => {
-    const exact916 = { ...profile, video: { ...profile.video!, aspect: { min: 9 / 16, max: 9 / 16 } } };
+    const exact916 = {
+      ...profile,
+      video: { ...profile.video!, aspect: { min: 9 / 16, max: 9 / 16 } },
+    };
     const check = (w: number, h: number) =>
-      validateForDestination(exact916, { media: [{ ...vertical, width: w, height: h }], caption: 'ok', title: 'T', visibility: 'public' }).map((i) => i.code);
+      validateForDestination(exact916, {
+        media: [{ ...vertical, width: w, height: h }],
+        caption: 'ok',
+        title: 'T',
+        visibility: 'public',
+      }).map((i) => i.code);
     expect(check(1080, 1920)).toEqual([]);
     expect(check(721, 1279)).toEqual([]); // 0.5637, within rounding of 0.5625
     expect(check(1080, 1350)).toEqual(['video_aspect']); // 4:5 is not 9:16

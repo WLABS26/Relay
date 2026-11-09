@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { isConfigError, parseConfig } from '@relay/config';
-import { DecryptionError, EnvelopeEncryptor, LocalKeyringProvider, createEncryptor, secretAad } from './envelope';
+import {
+  DecryptionError,
+  EnvelopeEncryptor,
+  LocalKeyringProvider,
+  createEncryptor,
+  secretAad,
+} from './envelope';
 
 const key = (fill: number) => Buffer.alloc(32, fill);
-const aad = secretAad({ purpose: 'oauth_token', workspaceId: 'w1', provider: 'youtube', grantId: 'g1', id: 'row1' });
+const aad = secretAad({
+  purpose: 'oauth_token',
+  workspaceId: 'w1',
+  provider: 'youtube',
+  grantId: 'g1',
+  id: 'row1',
+});
 
 describe('envelope encryption', () => {
   it('round-trips and never repeats a ciphertext', async () => {
@@ -24,7 +36,14 @@ describe('envelope encryption', () => {
   ])('refuses to decrypt a ciphertext moved to %s', async (_, change) => {
     const enc = new EnvelopeEncryptor(new LocalKeyringProvider([{ kid: 'k1', key: key(1) }]));
     const sealed = await enc.encrypt('secret', aad);
-    const moved = secretAad({ purpose: 'oauth_token', workspaceId: 'w1', provider: 'youtube', grantId: 'g1', id: 'row1', ...change });
+    const moved = secretAad({
+      purpose: 'oauth_token',
+      workspaceId: 'w1',
+      provider: 'youtube',
+      grantId: 'g1',
+      id: 'row1',
+      ...change,
+    });
     await expect(enc.decrypt(sealed, moved)).rejects.toBeInstanceOf(DecryptionError);
   });
 
@@ -37,17 +56,26 @@ describe('envelope encryption', () => {
       await expect(enc.decrypt(copy, aad)).rejects.toBeInstanceOf(DecryptionError);
     }
     await expect(enc.decrypt(sealed.subarray(0, 10), aad)).rejects.toBeInstanceOf(DecryptionError);
-    await expect(enc.decrypt(Buffer.from([2, 0]), aad)).rejects.toThrow('unsupported ciphertext version');
+    await expect(enc.decrypt(Buffer.from([2, 0]), aad)).rejects.toThrow(
+      'unsupported ciphertext version',
+    );
   });
 
   it('rotates keys: new data uses the first key, old data still opens with retired keys', async () => {
     const old = new EnvelopeEncryptor(new LocalKeyringProvider([{ kid: 'k1', key: key(1) }]));
     const sealedWithOld = await old.encrypt('legacy', aad);
-    const rotated = new EnvelopeEncryptor(new LocalKeyringProvider([{ kid: 'k2', key: key(2) }, { kid: 'k1', key: key(1) }]));
+    const rotated = new EnvelopeEncryptor(
+      new LocalKeyringProvider([
+        { kid: 'k2', key: key(2) },
+        { kid: 'k1', key: key(1) },
+      ]),
+    );
     expect((await rotated.decrypt(sealedWithOld, aad)).toString()).toBe('legacy');
     const fresh = await rotated.encrypt('new', aad);
     expect(fresh.subarray(2, 2 + fresh[1]!).toString()).toBe('k2');
-    const withoutOld = new EnvelopeEncryptor(new LocalKeyringProvider([{ kid: 'k2', key: key(2) }]));
+    const withoutOld = new EnvelopeEncryptor(
+      new LocalKeyringProvider([{ kid: 'k2', key: key(2) }]),
+    );
     await expect(withoutOld.decrypt(sealedWithOld, aad)).rejects.toBeInstanceOf(DecryptionError);
   });
 
@@ -67,6 +95,8 @@ describe('envelope encryption', () => {
       caught = error;
     }
     expect(isConfigError(caught)).toBe(true);
-    expect((caught as Error).message).toContain('KMS key provider ships with the provider-credential milestone (M3)');
+    expect((caught as Error).message).toContain(
+      'KMS key provider ships with the provider-credential milestone (M3)',
+    );
   });
 });

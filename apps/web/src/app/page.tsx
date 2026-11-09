@@ -15,7 +15,10 @@ export default async function Home() {
     <main id="main" className="auth-panel">
       <Wordmark />
       <h1>Create your first workspace</h1>
-      <p className="r-muted">You are signed in as {session.user.email} but are not a member of any workspace yet. Ask an owner for an invitation, or create one.</p>
+      <p className="r-muted">
+        You are signed in as {session.user.email} but are not a member of any workspace yet. Ask an
+        owner for an invitation, or create one.
+      </p>
       <CreateWorkspace />
     </main>
   );

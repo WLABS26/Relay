@@ -33,8 +33,18 @@ export function rollupStates(states: DestinationState[]): PostRollup {
   }
   // Most common first; ties follow lifecycle order so the label never depends on row order.
   const parts = distinct
-    .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0) || DESTINATION_STATES.indexOf(a) - DESTINATION_STATES.indexOf(b))
+    .sort(
+      (a, b) =>
+        (counts[b] ?? 0) - (counts[a] ?? 0) ||
+        DESTINATION_STATES.indexOf(a) - DESTINATION_STATES.indexOf(b),
+    )
     .map((s) => `${counts[s]} ${STATE_LABELS[s].toLowerCase()}`);
   const attention = ATTENTION_ORDER.find((s) => counts[s]) ?? null;
-  return { kind: 'mixed', label: `Mixed: ${parts.join(', ')}`, total: states.length, counts, attention };
+  return {
+    kind: 'mixed',
+    label: `Mixed: ${parts.join(', ')}`,
+    total: states.length,
+    counts,
+    attention,
+  };
 }

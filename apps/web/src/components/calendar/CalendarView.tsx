@@ -92,7 +92,13 @@ export function CalendarView(props: {
         <span className="r-strong r-tabular">{item.localTime}</span>
         {item.locked ? <Lock aria-label="Locked slot" width={14} height={14} /> : null}
       </div>
-      <Link href={`/w/${props.slug}/posts/${item.postId}`} className="r-strong" style={{ overflowWrap: 'anywhere' }}>{item.title}</Link>
+      <Link
+        href={`/w/${props.slug}/posts/${item.postId}`}
+        className="r-strong"
+        style={{ overflowWrap: 'anywhere' }}
+      >
+        {item.title}
+      </Link>
       <span className="r-muted">{item.destinationLabel}</span>
       <StateBadge state={item.state} label={item.stateLabel} />
       {item.connectionMode === 'simulated' || item.isSample ? (
@@ -101,9 +107,19 @@ export function CalendarView(props: {
           {item.isSample ? <SampleBadge /> : null}
         </span>
       ) : null}
-      {item.publishedAt ? <span className="r-muted r-tabular">Published {formatTime(item.publishedAt, props.zone)}</span> : null}
+      {item.publishedAt ? (
+        <span className="r-muted r-tabular">
+          Published {formatTime(item.publishedAt, props.zone)}
+        </span>
+      ) : null}
       {canMove(item) ? (
-        <button type="button" className="r-button r-button--ghost" style={{ justifyContent: 'flex-start', paddingLeft: 4 }} onClick={() => openMove(item)} aria-label={`Move ${item.title} (${item.destinationLabel})`}>
+        <button
+          type="button"
+          className="r-button r-button--ghost"
+          style={{ justifyContent: 'flex-start', paddingLeft: 4 }}
+          onClick={() => openMove(item)}
+          aria-label={`Move ${item.title} (${item.destinationLabel})`}
+        >
           <CalendarClock aria-hidden /> Move
         </button>
       ) : null}
@@ -115,25 +131,55 @@ export function CalendarView(props: {
       <div className="app-page-header">
         <div>
           <h1>Calendar</h1>
-          <p>{props.pageName} · {zoneLabel(props.zone)}</p>
+          <p>
+            {props.pageName} · {zoneLabel(props.zone)}
+          </p>
         </div>
       </div>
       <div className="cal-toolbar">
         <div className="r-row-tight">
-          <Link className={linkButtonClass('secondary')} href={query(props.prevWeek)} aria-label="Previous week"><ChevronLeft aria-hidden /></Link>
-          <Link className={linkButtonClass('secondary')} href={query(null)}>This week</Link>
-          <Link className={linkButtonClass('secondary')} href={query(props.nextWeek)} aria-label="Next week"><ChevronRight aria-hidden /></Link>
-          <span className="r-strong r-small">{formatDayShort(props.days[0]!)} – {formatDayShort(props.days[6]!)}</span>
+          <Link
+            className={linkButtonClass('secondary')}
+            href={query(props.prevWeek)}
+            aria-label="Previous week"
+          >
+            <ChevronLeft aria-hidden />
+          </Link>
+          <Link className={linkButtonClass('secondary')} href={query(null)}>
+            This week
+          </Link>
+          <Link
+            className={linkButtonClass('secondary')}
+            href={query(props.nextWeek)}
+            aria-label="Next week"
+          >
+            <ChevronRight aria-hidden />
+          </Link>
+          <span className="r-strong r-small">
+            {formatDayShort(props.days[0]!)} – {formatDayShort(props.days[6]!)}
+          </span>
         </div>
         <label className="r-row-tight r-small" style={{ maxWidth: '100%' }}>
           <span>Destination</span>
-          <select className="r-select" style={{ width: 'auto', minWidth: 200 }} value={props.destinationId ?? ''} onChange={(e) => router.push(query(props.days[0]!, e.target.value || null))}>
+          <select
+            className="r-select"
+            style={{ width: 'auto', minWidth: 200 }}
+            value={props.destinationId ?? ''}
+            onChange={(e) => router.push(query(props.days[0]!, e.target.value || null))}
+          >
             <option value="">All destinations</option>
-            {props.destinations.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+            {props.destinations.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label}
+              </option>
+            ))}
           </select>
         </label>
       </div>
-      <p className="r-xs r-muted">Drag a scheduled post to another day, or use Move. Moving always asks you to confirm the account, visibility and local time.</p>
+      <p className="r-xs r-muted">
+        Drag a scheduled post to another day, or use Move. Moving always asks you to confirm the
+        account, visibility and local time.
+      </p>
 
       <ol className="cal-week" aria-label="Week view">
         {props.days.map((day) => (
@@ -170,19 +216,46 @@ export function CalendarView(props: {
       <section className="cal-agenda" aria-label="Agenda">
         {props.days.map((day) => (
           <div key={day} className="r-stack-sm">
-            <h2 className="r-section-title">{formatDay(day)}{day === props.today ? ' · Today' : ''}</h2>
-            {byDay(day).length === 0 ? <p className="r-xs r-muted">Nothing scheduled.</p> : byDay(day).map((i) => renderItem(i, false))}
+            <h2 className="r-section-title">
+              {formatDay(day)}
+              {day === props.today ? ' · Today' : ''}
+            </h2>
+            {byDay(day).length === 0 ? (
+              <p className="r-xs r-muted">Nothing scheduled.</p>
+            ) : (
+              byDay(day).map((i) => renderItem(i, false))
+            )}
           </div>
         ))}
       </section>
 
       {props.items.length === 0 ? (
-        <EmptyState icon={<CalendarClock aria-hidden />} title="Nothing scheduled this week" action={<Link className={linkButtonClass('secondary')} href={`/w/${props.slug}/posts${props.pageId ? `?page=${props.pageId}` : ''}`}>Go to content</Link>}>
-          Approved posts can be scheduled from their page. Suggested slots appear only while scheduling and are never reserved.
+        <EmptyState
+          icon={<CalendarClock aria-hidden />}
+          title="Nothing scheduled this week"
+          action={
+            <Link
+              className={linkButtonClass('secondary')}
+              href={`/w/${props.slug}/posts${props.pageId ? `?page=${props.pageId}` : ''}`}
+            >
+              Go to content
+            </Link>
+          }
+        >
+          Approved posts can be scheduled from their page. Suggested slots appear only while
+          scheduling and are never reserved.
         </EmptyState>
       ) : null}
 
-      <ScheduleDialog open={move !== null} onClose={() => setMove(null)} workspaceId={props.workspaceId} zone={props.zone} target={move?.target ?? null} mode="move" initialLocal={move?.initialLocal} />
+      <ScheduleDialog
+        open={move !== null}
+        onClose={() => setMove(null)}
+        workspaceId={props.workspaceId}
+        zone={props.zone}
+        target={move?.target ?? null}
+        mode="move"
+        initialLocal={move?.initialLocal}
+      />
     </>
   );
 }

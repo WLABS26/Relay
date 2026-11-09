@@ -19,7 +19,8 @@ function stsd(...entryTypes: string[]): Buffer {
   return box('stsd', fullBox, ...entryTypes.map((t) => box(t, Buffer.alloc(78))));
 }
 const ftyp = box('ftyp', Buffer.from('isom\0\0\x02\0isomiso2avc1mp41', 'latin1'));
-const track = (...entries: string[]) => box('trak', box('mdia', box('minf', box('stbl', stsd(...entries)))));
+const track = (...entries: string[]) =>
+  box('trak', box('mdia', box('minf', box('stbl', stsd(...entries)))));
 
 const dir = mkdtempSync(path.join(tmpdir(), 'relay-isobmff-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -32,20 +33,32 @@ async function scan(...topLevel: Buffer[]) {
 
 describe('scanIsoBmffProtection', () => {
   it('passes an ordinary file and inspects it completely', async () => {
-    const r = await scan(ftyp, box('moov', track('avc1'), track('mp4a')), box('mdat', Buffer.alloc(64)));
+    const r = await scan(
+      ftyp,
+      box('moov', track('avc1'), track('mp4a')),
+      box('mdat', Buffer.alloc(64)),
+    );
     expect(r).toMatchObject({ encrypted: false, complete: true, markers: [] });
     expect(r.boxesVisited).toBeGreaterThan(10);
   });
 
   it('finds protected sample entries that ffprobe reports as their original codec', async () => {
-    expect(await scan(ftyp, box('moov', track('encv')))).toMatchObject({ encrypted: true, markers: ['encv'] });
+    expect(await scan(ftyp, box('moov', track('encv')))).toMatchObject({
+      encrypted: true,
+      markers: ['encv'],
+    });
     expect((await scan(ftyp, box('moov', track('avc1'), track('enca')))).markers).toEqual(['enca']);
   });
 
   it('finds DRM and sample-encryption boxes, including inside fragments', async () => {
-    expect((await scan(ftyp, box('moov', box('pssh', Buffer.alloc(24)), track('avc1')))).markers).toEqual(['pssh']);
+    expect(
+      (await scan(ftyp, box('moov', box('pssh', Buffer.alloc(24)), track('avc1')))).markers,
+    ).toEqual(['pssh']);
     const fragment = box('moof', box('traf', box('senc', Buffer.alloc(16))));
-    expect(await scan(ftyp, box('moov', track('avc1')), fragment, box('mdat'))).toMatchObject({ encrypted: true, markers: ['senc'] });
+    expect(await scan(ftyp, box('moov', track('avc1')), fragment, box('mdat'))).toMatchObject({
+      encrypted: true,
+      markers: ['senc'],
+    });
   });
 
   it('stops safely on truncated and corrupt sizes', async () => {
@@ -71,7 +84,16 @@ describe('scanIsoBmffProtection', () => {
     // Many tiny boxes spread across several containers: the budget is global, not per container.
     const perContainer = Math.ceil(ISOBMFF_LIMITS.maxBoxes / 4) + 10;
     const filler = Buffer.concat(Array.from({ length: perContainer }, () => box('free')));
-    const r = await scan(ftyp, box('moov', box('trak', filler), box('trak', filler), box('trak', filler), box('trak', filler)));
+    const r = await scan(
+      ftyp,
+      box(
+        'moov',
+        box('trak', filler),
+        box('trak', filler),
+        box('trak', filler),
+        box('trak', filler),
+      ),
+    );
     expect(r.complete).toBe(false);
     expect(r.boxesVisited).toBeLessThanOrEqual(ISOBMFF_LIMITS.maxBoxes);
   });

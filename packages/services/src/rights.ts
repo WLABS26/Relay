@@ -12,14 +12,29 @@ export type RightsOperation = 'view' | 'edit' | 'export' | 'publish';
 export interface RightsDecision {
   ok: boolean;
   grants: Array<{ assetId: string; grantId: string; grantVersion: number }>;
-  problems: Array<{ assetId: string; reason: 'no_grant' | 'revoked' | 'expired' | 'not_yet_valid' | 'operation_denied' | 'destination_denied' }>;
+  problems: Array<{
+    assetId: string;
+    reason:
+      | 'no_grant'
+      | 'revoked'
+      | 'expired'
+      | 'not_yet_valid'
+      | 'operation_denied'
+      | 'destination_denied';
+  }>;
   /** Earliest expiry among chosen grants (scheduling must land before it). */
   expiresAt: Date | null;
 }
 
 export async function evaluateRights(
   tx: Tx,
-  input: { assetIds: string[]; provider: DestinationProviderId; operation: RightsOperation; at: Date; commercial?: boolean },
+  input: {
+    assetIds: string[];
+    provider: DestinationProviderId;
+    operation: RightsOperation;
+    at: Date;
+    commercial?: boolean;
+  },
 ): Promise<RightsDecision> {
   const assetIds = [...new Set(input.assetIds)];
   if (assetIds.length === 0) return { ok: false, grants: [], problems: [], expiresAt: null };
@@ -47,7 +62,13 @@ export async function evaluateRights(
         return false;
       }
       const allowed =
-        input.operation === 'view' ? g.canView : input.operation === 'edit' ? g.canEdit : input.operation === 'export' ? g.canExport : g.canPublish;
+        input.operation === 'view'
+          ? g.canView
+          : input.operation === 'edit'
+            ? g.canEdit
+            : input.operation === 'export'
+              ? g.canExport
+              : g.canPublish;
       if (!allowed || (input.commercial && !g.canCommercialUse)) {
         reason = 'operation_denied';
         return false;
@@ -64,7 +85,8 @@ export async function evaluateRights(
       continue;
     }
     decision.grants.push({ assetId, grantId: usable.id, grantVersion: usable.version });
-    if (usable.validUntil && (!decision.expiresAt || usable.validUntil < decision.expiresAt)) decision.expiresAt = usable.validUntil;
+    if (usable.validUntil && (!decision.expiresAt || usable.validUntil < decision.expiresAt))
+      decision.expiresAt = usable.validUntil;
   }
   decision.grants.sort((a, b) => a.assetId.localeCompare(b.assetId));
   return decision;

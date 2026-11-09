@@ -126,9 +126,9 @@ const envSchema = z.object({
   RELAY_KMS_KEY_ID: optionalString,
 
   // Operations
-  RELAY_LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default(
-    'info',
-  ),
+  RELAY_LOG_LEVEL: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+    .default('info'),
   RELAY_PUBLISH_KILL_SWITCH: boolFromEnv.default(false),
   RELAY_SCHEDULER_LATE_GRACE_SECONDS: intFromEnv(0, 60 * 60 * 24).default(15 * 60),
   RELAY_TELEMETRY_ENDPOINT: optionalString,
@@ -247,13 +247,21 @@ export class ConfigError extends Error {
  * twice, which defeats `instanceof`).
  */
 export function isConfigError(error: unknown): error is ConfigError {
-  return error instanceof ConfigError || (error instanceof Error && error.name === 'ConfigError' && Array.isArray((error as ConfigError).problems));
+  return (
+    error instanceof ConfigError ||
+    (error instanceof Error &&
+      error.name === 'ConfigError' &&
+      Array.isArray((error as ConfigError).problems))
+  );
 }
 
 function parseKeyring(raw: string | undefined, problems: string[]): KeyringEntry[] {
   if (!raw) return [];
   const entries: KeyringEntry[] = [];
-  for (const part of raw.split(',').map((p) => p.trim()).filter(Boolean)) {
+  for (const part of raw
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean)) {
     const idx = part.indexOf(':');
     if (idx <= 0) {
       problems.push('RELAY_ENCRYPTION_KEYS entries must look like "<kid>:<base64-32-byte-key>"');

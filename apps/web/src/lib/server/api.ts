@@ -51,11 +51,19 @@ export class ApiResponse<T> {
   ) {}
 }
 
-type Handler<P, A extends boolean> = (c: A extends true ? AuthedApiContext<P> : ApiContext<P>) => Promise<unknown>;
+type Handler<P, A extends boolean> = (
+  c: A extends true ? AuthedApiContext<P> : ApiContext<P>,
+) => Promise<unknown>;
 
-function errorEnvelope(error: unknown, requestId: string, ctx: ServiceContext | null): { status: number; body: ErrorEnvelope; headers: Record<string, string> } {
+function errorEnvelope(
+  error: unknown,
+  requestId: string,
+  ctx: ServiceContext | null,
+): { status: number; body: ErrorEnvelope; headers: Record<string, string> } {
   if (isAppError(error)) {
-    const headers: Record<string, string> = error.retryAfterSeconds ? { 'retry-after': String(error.retryAfterSeconds) } : {};
+    const headers: Record<string, string> = error.retryAfterSeconds
+      ? { 'retry-after': String(error.retryAfterSeconds) }
+      : {};
     return { status: error.status, body: error.toEnvelope(requestId), headers };
   }
   if (error instanceof ZodError) {
@@ -64,22 +72,53 @@ function errorEnvelope(error: unknown, requestId: string, ctx: ServiceContext | 
       const key = issue.path.join('.') || '_';
       (fieldErrors[key] ??= []).push(issue.message);
     }
-    return { status: 422, body: { code: 'validation_failed', message: 'Some fields need attention.', fieldErrors, requestId }, headers: {} };
+    return {
+      status: 422,
+      body: {
+        code: 'validation_failed',
+        message: 'Some fields need attention.',
+        fieldErrors,
+        requestId,
+      },
+      headers: {},
+    };
   }
   if (isConfigError(error)) {
     console.error(error.message);
-    return { status: 503, body: { code: 'service_unavailable', message: 'Relay is misconfigured.', requestId }, headers: {} };
+    return {
+      status: 503,
+      body: { code: 'service_unavailable', message: 'Relay is misconfigured.', requestId },
+      headers: {},
+    };
   }
   ctx?.logger.error({ requestId, err: safeError(error) }, 'unhandled API error');
-  return { status: 500, body: { code: 'internal_error', message: 'Something went wrong. Try again, or share the request ID with support.', requestId }, headers: {} };
+  return {
+    status: 500,
+    body: {
+      code: 'internal_error',
+      message: 'Something went wrong. Try again, or share the request ID with support.',
+      requestId,
+    },
+    headers: {},
+  };
 }
 
 function applyCookies(response: NextResponse, cookies: CookieSpec[]): void {
-  for (const c of cookies) response.cookies.set(c.name, c.value, { httpOnly: c.httpOnly, secure: c.secure, sameSite: c.sameSite, path: c.path, maxAge: c.maxAge });
+  for (const c of cookies)
+    response.cookies.set(c.name, c.value, {
+      httpOnly: c.httpOnly,
+      secure: c.secure,
+      sameSite: c.sameSite,
+      path: c.path,
+      maxAge: c.maxAge,
+    });
 }
 
 export function isSameOrigin(req: NextRequest, publicOrigin: string): boolean {
-  return originAllowed({ origin: req.headers.get('origin'), secFetchSite: req.headers.get('sec-fetch-site') }, publicOrigin);
+  return originAllowed(
+    { origin: req.headers.get('origin'), secFetchSite: req.headers.get('sec-fetch-site') },
+    publicOrigin,
+  );
 }
 
 export function api<P = Record<string, string>, A extends boolean = true>(
@@ -101,11 +140,23 @@ export function api<P = Record<string, string>, A extends boolean = true>(
       if (mutation && !isSameOrigin(req, ctx.config.publicOrigin)) {
         throw new AppError('csrf_failed', 'Cross-site request refused.');
       }
-      const session = await validateSession(ctx, req.cookies.get(ctx.config.session.cookieName)?.value);
+      const session = await validateSession(
+        ctx,
+        req.cookies.get(ctx.config.session.cookieName)?.value,
+      );
       if (requireAuth && !session) throw new AppError('unauthenticated', 'Sign in to continue.');
       if (mutation && session && options.csrf !== false) {
-        if (!verifyCsrfToken(ctx.config.session.secret, session.sessionId, req.headers.get('x-csrf-token'))) {
-          throw new AppError('csrf_failed', 'Your session token is missing or stale. Reload the page and try again.');
+        if (
+          !verifyCsrfToken(
+            ctx.config.session.secret,
+            session.sessionId,
+            req.headers.get('x-csrf-token'),
+          )
+        ) {
+          throw new AppError(
+            'csrf_failed',
+            'Your session token is missing or stale. Reload the page and try again.',
+          );
         }
       }
       let parsedBody: unknown;
@@ -123,8 +174,13 @@ export function api<P = Record<string, string>, A extends boolean = true>(
           const type = req.headers.get('content-type') ?? '';
           const text = await req.text();
           if (text.length === 0) return (parsedBody = {});
-          if (!type.includes('application/json')) throw new AppError('unsupported_media_type', 'Send JSON (Content-Type: application/json).');
-          if (Buffer.byteLength(text) > MAX_JSON_BYTES) throw new AppError('payload_too_large', 'Request body is too large.');
+          if (!type.includes('application/json'))
+            throw new AppError(
+              'unsupported_media_type',
+              'Send JSON (Content-Type: application/json).',
+            );
+          if (Buffer.byteLength(text) > MAX_JSON_BYTES)
+            throw new AppError('payload_too_large', 'Request body is too large.');
           try {
             parsedBody = JSON.parse(text);
           } catch {

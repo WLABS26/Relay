@@ -9,7 +9,10 @@ export async function GET() {
   try {
     const ctx = webContext();
     const { schemaVersion } = await checkDatabase(ctx.db);
-    checks.database = schemaVersion && schemaVersion >= REQUIRED_SCHEMA_VERSION ? 'ok' : `schema ${schemaVersion ?? 'missing'} < ${REQUIRED_SCHEMA_VERSION}`;
+    checks.database =
+      schemaVersion && schemaVersion >= REQUIRED_SCHEMA_VERSION
+        ? 'ok'
+        : `schema ${schemaVersion ?? 'missing'} < ${REQUIRED_SCHEMA_VERSION}`;
     if (checks.database !== 'ok') ok = false;
     try {
       await ctx.storage.ping();
@@ -22,5 +25,8 @@ export async function GET() {
     checks.database = 'unreachable';
     ok = false;
   }
-  return NextResponse.json({ ok, checks }, { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } });
+  return NextResponse.json(
+    { ok, checks },
+    { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
+  );
 }

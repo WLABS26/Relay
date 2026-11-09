@@ -2,7 +2,11 @@ import type { Metadata } from 'next';
 import { can, ROLE_DESCRIPTIONS, ROLE_LABELS, ROLES } from '@relay/domain';
 import { listMembers } from '@relay/services';
 import { Card } from '@relay/ui';
-import { InviteForm, MemberActions, RevokeInvitationButton } from '@/components/settings/MemberForms';
+import {
+  InviteForm,
+  MemberActions,
+  RevokeInvitationButton,
+} from '@/components/settings/MemberForms';
 import { formatDateTime } from '@/lib/format';
 import { loadWorkspace } from '@/lib/server/workspace';
 
@@ -24,16 +28,40 @@ export default async function MembersPage({ params }: { params: Promise<{ slug: 
       </div>
       <div className="r-table-wrap">
         <table className="r-table">
-          <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Pages</th>{manage ? <th scope="col">Manage</th> : null}</tr></thead>
+          <thead>
+            <tr>
+              <th scope="col">Person</th>
+              <th scope="col">Role</th>
+              <th scope="col">Pages</th>
+              {manage ? <th scope="col">Manage</th> : null}
+            </tr>
+          </thead>
           <tbody>
             {data.members.map((m) => (
               <tr key={m.id}>
-                <td><div className="r-stack-sm" style={{ gap: 2 }}><span className="r-strong">{m.displayName}</span><span className="r-xs r-muted">{m.email}{m.isDemo ? ' · demo' : ''}</span></div></td>
+                <td>
+                  <div className="r-stack-sm" style={{ gap: 2 }}>
+                    <span className="r-strong">{m.displayName}</span>
+                    <span className="r-xs r-muted">
+                      {m.email}
+                      {m.isDemo ? ' · demo' : ''}
+                    </span>
+                  </div>
+                </td>
                 <td>{ROLE_LABELS[m.role]}</td>
-                <td className="r-small">{m.allPages ? 'All pages' : m.pageIds.map(pageName).join(', ') || 'None'}</td>
+                <td className="r-small">
+                  {m.allPages ? 'All pages' : m.pageIds.map(pageName).join(', ') || 'None'}
+                </td>
                 {manage ? (
                   <td>
-                    <MemberActions workspaceId={wc.workspace.id} membershipId={m.id} version={m.version} role={m.role} actorRole={wc.member.role} self={m.userId === wc.user.userId} />
+                    <MemberActions
+                      workspaceId={wc.workspace.id}
+                      membershipId={m.id}
+                      version={m.version}
+                      role={m.role}
+                      actorRole={wc.member.role}
+                      self={m.userId === wc.user.userId}
+                    />
                   </td>
                 ) : null}
               </tr>
@@ -44,14 +72,21 @@ export default async function MembersPage({ params }: { params: Promise<{ slug: 
       {manage ? (
         <Card className="r-stack">
           <h2>Invite someone</h2>
-          <InviteForm workspaceId={wc.workspace.id} actorRole={wc.member.role} pages={wc.pages.map((p) => ({ id: p.id, name: p.name }))} />
+          <InviteForm
+            workspaceId={wc.workspace.id}
+            actorRole={wc.member.role}
+            pages={wc.pages.map((p) => ({ id: p.id, name: p.name }))}
+          />
           {data.invitations.length > 0 ? (
             <div className="r-stack-sm">
               <h3 className="r-section-title">Pending invitations</h3>
               <ul className="r-stack-sm" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {data.invitations.map((i) => (
                   <li key={i.id} className="r-spread r-small">
-                    <span>{i.emailNormalized} · {ROLE_LABELS[i.role as (typeof ROLES)[number]]} · expires {formatDateTime(i.expiresAt, wc.workspace.timezone)}</span>
+                    <span>
+                      {i.emailNormalized} · {ROLE_LABELS[i.role as (typeof ROLES)[number]]} ·
+                      expires {formatDateTime(i.expiresAt, wc.workspace.timezone)}
+                    </span>
                     <RevokeInvitationButton workspaceId={wc.workspace.id} invitationId={i.id} />
                   </li>
                 ))}

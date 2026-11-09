@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { fingerprint, intentHash, safeEqual } from '../server';
-import { DEFAULT_DECLARATIONS, canonicalJson, normalizeText, publishOperationKey, type PublishIntentPayload } from './intent';
+import {
+  DEFAULT_DECLARATIONS,
+  canonicalJson,
+  normalizeText,
+  publishOperationKey,
+  type PublishIntentPayload,
+} from './intent';
 
 const payload: PublishIntentPayload = {
   workspaceId: 'w1',
   postId: 'p1',
-  destination: { pageDestinationId: 'd1', socialAccountId: 'a1', provider: 'youtube', connectionMode: 'simulated', providerAccountId: 'sim-1' },
+  destination: {
+    pageDestinationId: 'd1',
+    socialAccountId: 'a1',
+    provider: 'youtube',
+    connectionMode: 'simulated',
+    providerAccountId: 'sim-1',
+  },
   media: [{ position: 0, assetId: 'm1', assetVersion: 1, kind: 'video', sha256: 'ab'.repeat(32) }],
   caption: 'Hello',
   title: 'Title',
@@ -24,7 +36,9 @@ describe('canonicalJson', () => {
   });
 
   it('encodes dates as ISO strings and non-finite numbers as null', () => {
-    expect(canonicalJson({ at: new Date('2026-11-09T10:00:00Z') })).toBe('{"at":"2026-11-09T10:00:00.000Z"}');
+    expect(canonicalJson({ at: new Date('2026-11-09T10:00:00Z') })).toBe(
+      '{"at":"2026-11-09T10:00:00.000Z"}',
+    );
     expect(canonicalJson([Number.NaN, Number.POSITIVE_INFINITY, -0])).toBe('[null,null,0]');
     expect(canonicalJson([undefined])).toBe('[null]');
   });
@@ -40,7 +54,11 @@ describe('canonicalJson', () => {
 function reverseKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(reverseKeys);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reverseKeys(v)]));
+    return Object.fromEntries(
+      Object.entries(value)
+        .reverse()
+        .map(([k, v]) => [k, reverseKeys(v)]),
+    );
   }
   return value;
 }
@@ -59,7 +77,10 @@ describe('intent hashing', () => {
     ['visibility', (p) => ({ ...p, visibility: 'private' })],
     ['media bytes', (p) => ({ ...p, media: [{ ...p.media[0]!, sha256: 'cd'.repeat(32) }] })],
     ['media version', (p) => ({ ...p, media: [{ ...p.media[0]!, assetVersion: 2 }] })],
-    ['target account', (p) => ({ ...p, destination: { ...p.destination, providerAccountId: 'sim-2' } })],
+    [
+      'target account',
+      (p) => ({ ...p, destination: { ...p.destination, providerAccountId: 'sim-2' } }),
+    ],
     ['declarations', (p) => ({ ...p, declarations: { ...p.declarations, paidPartnership: true } })],
     ['rights grant', (p) => ({ ...p, rights: [{ ...p.rights[0]!, grantVersion: 2 }] })],
     ['metadata', (p) => ({ ...p, metadata: { ...p.metadata, tags: 'x' } })],
@@ -79,7 +100,14 @@ describe('text and keys', () => {
   });
 
   it('builds the operation key from workspace, destination, revision and intent version', () => {
-    expect(publishOperationKey({ workspaceId: 'w', postDestinationId: 'd', revisionId: 'r', intentVersion: 3 })).toBe('w:d:r:3');
+    expect(
+      publishOperationKey({
+        workspaceId: 'w',
+        postDestinationId: 'd',
+        revisionId: 'r',
+        intentVersion: 3,
+      }),
+    ).toBe('w:d:r:3');
   });
 
   it('compares secrets in constant time, including different lengths', () => {

@@ -23,7 +23,8 @@ import { processAssetProbe } from '@relay/services/media-pipeline';
 
 export const meta = { requestId: 'test-request' };
 let counter = 0;
-export const unique = (prefix: string) => `${prefix}-${process.pid}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
+export const unique = (prefix: string) =>
+  `${prefix}-${process.pid}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
 export function testConfig(overrides: Record<string, string> = {}): RelayConfig {
   return parseConfig({ ...process.env, ...overrides });
@@ -52,11 +53,25 @@ export function makeContexts(options: { clock?: Clock; config?: RelayConfig } = 
   };
 }
 
-export async function createUser(ctx: ServiceContext, input: { name: string; email?: string; isDemo?: boolean }): Promise<AuthenticatedUser> {
+export async function createUser(
+  ctx: ServiceContext,
+  input: { name: string; email?: string; isDemo?: boolean },
+): Promise<AuthenticatedUser> {
   const id = ctx.ids.next();
-  const email = (input.email ?? `${unique(input.name.toLowerCase().replace(/\W+/g, ''))}@example.test`).toLowerCase();
+  const email = (
+    input.email ?? `${unique(input.name.toLowerCase().replace(/\W+/g, ''))}@example.test`
+  ).toLowerCase();
   await withAuthBootstrap(ctx.db, (tx) =>
-    tx.insertInto('users').values({ id, email, emailNormalized: email, displayName: input.name, isDemo: input.isDemo ?? true }).execute(),
+    tx
+      .insertInto('users')
+      .values({
+        id,
+        email,
+        emailNormalized: email,
+        displayName: input.name,
+        isDemo: input.isDemo ?? true,
+      })
+      .execute(),
   );
   return { userId: id, email, displayName: input.name, isDemo: input.isDemo ?? true };
 }
@@ -71,16 +86,50 @@ export interface Tenant {
 
 export async function createTenant(
   ctx: ServiceContext,
-  options: { zone?: string; accounts?: Array<{ key: string; provider: 'youtube' | 'instagram' | 'facebook_page' | 'tiktok'; profile?: SimulatorProfile }> } = {},
+  options: {
+    zone?: string;
+    accounts?: Array<{
+      key: string;
+      provider: 'youtube' | 'instagram' | 'facebook_page' | 'tiktok';
+      profile?: SimulatorProfile;
+    }>;
+  } = {},
 ): Promise<Tenant> {
   const owner = await createUser(ctx, { name: 'Owner' });
-  const slug = unique('ws').slice(0, 40).replace(/[^a-z0-9-]/g, '');
-  const ws = await createWorkspace(ctx, owner, { name: 'Test workspace', slug, timezone: options.zone ?? 'Europe/Berlin' }, meta, { isDemo: true });
-  const page = await createPage(ctx, owner, ws.id, { name: 'Test page', timezone: options.zone ?? 'Europe/Berlin' }, meta);
+  const slug = unique('ws')
+    .slice(0, 40)
+    .replace(/[^a-z0-9-]/g, '');
+  const ws = await createWorkspace(
+    ctx,
+    owner,
+    { name: 'Test workspace', slug, timezone: options.zone ?? 'Europe/Berlin' },
+    meta,
+    { isDemo: true },
+  );
+  const page = await createPage(
+    ctx,
+    owner,
+    ws.id,
+    { name: 'Test page', timezone: options.zone ?? 'Europe/Berlin' },
+    meta,
+  );
   const destinations: Tenant['destinations'] = {};
   for (const a of options.accounts ?? [{ key: 'youtube', provider: 'youtube' as const }]) {
-    const account = await createDemoConnection(ctx, owner, ws.id, { provider: a.provider, displayName: `Demo ${a.key}`, profile: a.profile ?? 'reliable' }, meta);
-    const dest = await addPageDestination(ctx, owner, ws.id, page.id, { socialAccountId: account.id }, meta);
+    const account = await createDemoConnection(
+      ctx,
+      owner,
+      ws.id,
+      { provider: a.provider, displayName: `Demo ${a.key}`, profile: a.profile ?? 'reliable' },
+      meta,
+    );
+    const dest = await addPageDestination(
+      ctx,
+      owner,
+      ws.id,
+      page.id,
+      { socialAccountId: account.id },
+      meta,
+    );
     destinations[a.key] = { pageDestinationId: dest.id, socialAccountId: account.id };
   }
   return { owner, workspaceId: ws.id, slug, pageId: page.id, destinations };
@@ -114,17 +163,30 @@ export async function uploadFixture(
     c.app,
     user,
     tenant.workspaceId,
-    { pageId: tenant.pageId, filename: name, mimeType: mime, sizeBytes: bytes.length, declaration: { confirmed: true, statementVersion: 'first-party-v1' } },
+    {
+      pageId: tenant.pageId,
+      filename: name,
+      mimeType: mime,
+      sizeBytes: bytes.length,
+      declaration: { confirmed: true, statementVersion: 'first-party-v1' },
+    },
     meta,
   );
   const body = start.body;
   let parts: Array<{ partNumber: number; etag: string }> | undefined;
   if (body.single) {
-    const res = await fetchAll(body.single.url, { method: 'PUT', body: bytes, headers: body.single.headers });
-    if (!res.ok) throw new Error(`presigned PUT failed: ${res.status} ${res.bytes.toString('utf8')}`);
+    const res = await fetchAll(body.single.url, {
+      method: 'PUT',
+      body: bytes,
+      headers: body.single.headers,
+    });
+    if (!res.ok)
+      throw new Error(`presigned PUT failed: ${res.status} ${res.bytes.toString('utf8')}`);
   } else {
     const { partSize, partCount } = body.multipart!;
-    const signed = await signUploadParts(c.app, user, tenant.workspaceId, body.uploadId, { partNumbers: Array.from({ length: partCount }, (_, i) => i + 1) });
+    const signed = await signUploadParts(c.app, user, tenant.workspaceId, body.uploadId, {
+      partNumbers: Array.from({ length: partCount }, (_, i) => i + 1),
+    });
     parts = [];
     for (const p of signed.parts) {
       const chunk = bytes.subarray((p.partNumber - 1) * partSize, p.partNumber * partSize);
@@ -133,17 +195,40 @@ export async function uploadFixture(
       parts.push({ partNumber: p.partNumber, etag: res.headers.get('etag') ?? '' });
     }
   }
-  await completeUpload(c.app, user, tenant.workspaceId, body.uploadId, parts ? { parts } : {}, meta);
+  await completeUpload(
+    c.app,
+    user,
+    tenant.workspaceId,
+    body.uploadId,
+    parts ? { parts } : {},
+    meta,
+  );
   const outcome =
     options.process === false
       ? null
-      : await processAssetProbe(c.worker, { workspaceId: tenant.workspaceId, assetId: body.assetId, uploadSessionId: body.uploadId }, { number: 1, max: 3 });
+      : await processAssetProbe(
+          c.worker,
+          {
+            workspaceId: tenant.workspaceId,
+            assetId: body.assetId,
+            uploadSessionId: body.uploadId,
+          },
+          { number: 1, max: 3 },
+        );
   return { assetId: body.assetId, uploadId: body.uploadId, outcome, strategy: body.strategy };
 }
 
-export async function destinationState(ctx: ServiceContext, workspaceId: string, postDestinationId: string) {
+export async function destinationState(
+  ctx: ServiceContext,
+  workspaceId: string,
+  postDestinationId: string,
+) {
   return withTenant(ctx.db, { workspaceId }, (tx) =>
-    tx.selectFrom('postDestinations').selectAll().where('id', '=', postDestinationId).executeTakeFirstOrThrow(),
+    tx
+      .selectFrom('postDestinations')
+      .selectAll()
+      .where('id', '=', postDestinationId)
+      .executeTakeFirstOrThrow(),
   );
 }
 
@@ -165,24 +250,39 @@ export async function drivePublishing(
     const state = pd.state as DestinationState;
     if (!pd.activeIntentId) return { state, steps };
     const intent = await withTenant(c.worker.db, { workspaceId }, (tx) =>
-      tx.selectFrom('publishIntents').select(['id', 'intentVersion', 'plannedAt']).where('id', '=', pd.activeIntentId!).executeTakeFirstOrThrow(),
+      tx
+        .selectFrom('publishIntents')
+        .select(['id', 'intentVersion', 'plannedAt'])
+        .where('id', '=', pd.activeIntentId!)
+        .executeTakeFirstOrThrow(),
     );
     if (state === 'needs_reconciliation') {
       if (pd.stateReason === 'operator_review_required') return { state, steps };
-      const r = await reconcilePublish(c.worker, { workspaceId, postDestinationId, intentId: intent.id }, { workerId: options.workerId ?? 'test-worker' });
+      const r = await reconcilePublish(
+        c.worker,
+        { workspaceId, postDestinationId, intentId: intent.id },
+        { workerId: options.workerId ?? 'test-worker' },
+      );
       steps.push(`reconcile:${r}`);
       if (r === 'indeterminate') return { state: 'needs_reconciliation', steps };
       continue;
     }
-    if (!['scheduled', 'preparing', 'dispatching', 'processing'].includes(state)) return { state, steps };
+    if (!['scheduled', 'preparing', 'dispatching', 'processing'].includes(state))
+      return { state, steps };
     const outcome = await advancePublish(
       c.worker,
       { workspaceId, postDestinationId, intentId: intent.id, intentVersion: intent.intentVersion },
       { workerId: options.workerId ?? 'test-worker' },
     );
     steps.push(outcome.kind === 'step' ? `${outcome.phase}:${outcome.result}` : outcome.kind);
-    if (outcome.kind === 'deferred' && clock instanceof ManualClock) clock.set(new Date(Date.parse(outcome.until) + 1));
-    else if (outcome.kind === 'step' && ['waiting', 'rate_limited', 'retryable'].includes(outcome.result) && clock instanceof ManualClock) clock.advance(5 * 60_000);
+    if (outcome.kind === 'deferred' && clock instanceof ManualClock)
+      clock.set(new Date(Date.parse(outcome.until) + 1));
+    else if (
+      outcome.kind === 'step' &&
+      ['waiting', 'rate_limited', 'retryable'].includes(outcome.result) &&
+      clock instanceof ManualClock
+    )
+      clock.advance(5 * 60_000);
     else if (outcome.kind === 'blocked' || outcome.kind === 'stale' || outcome.kind === 'held') {
       const after = await destinationState(c.worker, workspaceId, postDestinationId);
       return { state: after.state as DestinationState, steps };
@@ -196,9 +296,16 @@ export async function drivePublishing(
 export async function approvedPost(
   c: Contexts,
   tenant: Tenant,
-  options: { destinationKeys: string[]; assetIds: string[]; title?: string; caption?: string; user?: AuthenticatedUser },
+  options: {
+    destinationKeys: string[];
+    assetIds: string[];
+    title?: string;
+    caption?: string;
+    user?: AuthenticatedUser;
+  },
 ) {
-  const { createPost, submitPost, getPostDetail, decideApprovals } = await import('@relay/services');
+  const { createPost, submitPost, getPostDetail, decideApprovals } =
+    await import('@relay/services');
   const user = options.user ?? tenant.owner;
   const created = await createPost(
     c.app,
@@ -223,7 +330,14 @@ export async function approvedPost(
     user,
     tenant.workspaceId,
     postId,
-    { decisions: detail.destinations.map((d) => ({ postDestinationId: d.id, decision: 'approve' as const, revisionId: detail.revision.id, intentHash: d.intentHash })) },
+    {
+      decisions: detail.destinations.map((d) => ({
+        postDestinationId: d.id,
+        decision: 'approve' as const,
+        revisionId: detail.revision.id,
+        intentHash: d.intentHash,
+      })),
+    },
     meta,
   );
   const rejected = decided.outcomes.filter((o) => !o.ok);
@@ -231,7 +345,9 @@ export async function approvedPost(
   const fresh = await getPostDetail(c.app, user, tenant.workspaceId, postId);
   const byKey: Record<string, { id: string; version: number }> = {};
   for (const key of options.destinationKeys) {
-    const d = fresh.destinations.find((x) => x.pageDestinationId === tenant.destinations[key]!.pageDestinationId)!;
+    const d = fresh.destinations.find(
+      (x) => x.pageDestinationId === tenant.destinations[key]!.pageDestinationId,
+    )!;
     byKey[key] = { id: d.id, version: d.version };
   }
   return { postId, revisionId: fresh.revision.id, destinations: byKey };

@@ -30,7 +30,12 @@ describe('resolveCivilTime', () => {
   it('resolves an ordinary wall time to exactly one instant', () => {
     expect(resolveCivilTime('2026-07-01T12:00', 'Asia/Kolkata')).toEqual({
       kind: 'exact',
-      value: { instant: '2026-07-01T06:30:00Z', civil: '2026-07-01T12:00', offset: '+05:30', zone: 'Asia/Kolkata' },
+      value: {
+        instant: '2026-07-01T06:30:00Z',
+        civil: '2026-07-01T12:00',
+        offset: '+05:30',
+        zone: 'Asia/Kolkata',
+      },
     });
   });
 
@@ -50,24 +55,33 @@ describe('resolveCivilTime', () => {
     ['Europe/Berlin', '2026-10-25T02:30', '+02:00', '+01:00'],
     ['America/New_York', '2026-11-01T01:30', '-04:00', '-05:00'],
     ['Australia/Lord_Howe', '2026-04-05T01:45', '+11:00', '+10:30'],
-  ])('reports %s %s as ambiguous with both offsets, earlier first', (zone, civil, earlier, later) => {
-    const r = resolveCivilTime(civil, zone);
-    expect(r.kind).toBe('ambiguous');
-    if (r.kind !== 'ambiguous') return;
-    expect([r.earlier.offset, r.later.offset]).toEqual([earlier, later]);
-    expect(r.earlier.civil).toBe(civil);
-    expect(r.later.civil).toBe(civil);
-    expect(Date.parse(r.later.instant) - Date.parse(r.earlier.instant)).toBeGreaterThan(0);
-  });
+  ])(
+    'reports %s %s as ambiguous with both offsets, earlier first',
+    (zone, civil, earlier, later) => {
+      const r = resolveCivilTime(civil, zone);
+      expect(r.kind).toBe('ambiguous');
+      if (r.kind !== 'ambiguous') return;
+      expect([r.earlier.offset, r.later.offset]).toEqual([earlier, later]);
+      expect(r.earlier.civil).toBe(civil);
+      expect(r.later.civil).toBe(civil);
+      expect(Date.parse(r.later.instant) - Date.parse(r.earlier.instant)).toBeGreaterThan(0);
+    },
+  );
 
   it('treats the first instant after a fold as exact', () => {
     expect(resolveCivilTime('2026-10-25T03:00', 'Europe/Berlin').kind).toBe('exact');
   });
 
   it('rejects malformed and impossible calendar values', () => {
-    expect(errorOf(() => resolveCivilTime('2026-10-25 03:00', 'Europe/Berlin')).code).toBe('validation_failed');
-    expect(errorOf(() => resolveCivilTime('2026-02-30T10:00', 'Europe/Berlin')).code).toBe('validation_failed');
-    expect(errorOf(() => resolveCivilTime('2026-01-01T24:00', 'Europe/Berlin')).code).toBe('validation_failed');
+    expect(errorOf(() => resolveCivilTime('2026-10-25 03:00', 'Europe/Berlin')).code).toBe(
+      'validation_failed',
+    );
+    expect(errorOf(() => resolveCivilTime('2026-02-30T10:00', 'Europe/Berlin')).code).toBe(
+      'validation_failed',
+    );
+    expect(errorOf(() => resolveCivilTime('2026-01-01T24:00', 'Europe/Berlin')).code).toBe(
+      'validation_failed',
+    );
   });
 });
 
@@ -82,15 +96,27 @@ describe('selectInstant', () => {
   });
 
   it('uses the explicit offset the user chose, and refuses one that does not apply', () => {
-    expect(selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+01:00').instant).toBe('2026-10-25T01:30:00Z');
-    expect(selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+02:00').instant).toBe('2026-10-25T00:30:00Z');
-    expect(errorOf(() => selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+05:00')).code).toBe('ambiguous_local_time');
-    expect(errorOf(() => selectInstant('2026-07-01T12:00', 'Europe/Berlin', '+01:00')).code).toBe('validation_failed');
+    expect(selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+01:00').instant).toBe(
+      '2026-10-25T01:30:00Z',
+    );
+    expect(selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+02:00').instant).toBe(
+      '2026-10-25T00:30:00Z',
+    );
+    expect(errorOf(() => selectInstant('2026-10-25T02:30', 'Europe/Berlin', '+05:00')).code).toBe(
+      'ambiguous_local_time',
+    );
+    expect(errorOf(() => selectInstant('2026-07-01T12:00', 'Europe/Berlin', '+01:00')).code).toBe(
+      'validation_failed',
+    );
   });
 
   it('applies a page rule for folds only when one is set', () => {
-    expect(selectInstant('2026-11-01T01:30', 'America/New_York', undefined, 'earlier').offset).toBe('-04:00');
-    expect(selectInstant('2026-11-01T01:30', 'America/New_York', undefined, 'later').offset).toBe('-05:00');
+    expect(selectInstant('2026-11-01T01:30', 'America/New_York', undefined, 'earlier').offset).toBe(
+      '-04:00',
+    );
+    expect(selectInstant('2026-11-01T01:30', 'America/New_York', undefined, 'later').offset).toBe(
+      '-05:00',
+    );
   });
 
   it('refuses a nonexistent time and offers the next valid one', () => {
@@ -127,14 +153,27 @@ describe('zone helpers', () => {
   });
 
   it('starts a day at its first valid instant, even when local midnight does not exist', () => {
-    expect(startOfLocalDay('2026-03-29', 'Europe/Berlin').toISOString()).toBe('2026-03-28T23:00:00.000Z');
-    expect(startOfLocalDay('2026-09-06', 'America/Santiago').toISOString()).toBe('2026-09-06T04:00:00.000Z');
+    expect(startOfLocalDay('2026-03-29', 'Europe/Berlin').toISOString()).toBe(
+      '2026-03-28T23:00:00.000Z',
+    );
+    expect(startOfLocalDay('2026-09-06', 'America/Santiago').toISOString()).toBe(
+      '2026-09-06T04:00:00.000Z',
+    );
   });
 
   it('flags DST transition days with the offsets on either side', () => {
-    expect(dstTransitionOn('2026-03-29', 'Europe/Berlin')).toEqual({ from: '+01:00', to: '+02:00' });
-    expect(dstTransitionOn('2026-10-25', 'Europe/Berlin')).toEqual({ from: '+02:00', to: '+01:00' });
-    expect(dstTransitionOn('2026-10-04', 'Australia/Lord_Howe')).toEqual({ from: '+10:30', to: '+11:00' });
+    expect(dstTransitionOn('2026-03-29', 'Europe/Berlin')).toEqual({
+      from: '+01:00',
+      to: '+02:00',
+    });
+    expect(dstTransitionOn('2026-10-25', 'Europe/Berlin')).toEqual({
+      from: '+02:00',
+      to: '+01:00',
+    });
+    expect(dstTransitionOn('2026-10-04', 'Australia/Lord_Howe')).toEqual({
+      from: '+10:30',
+      to: '+11:00',
+    });
     expect(dstTransitionOn('2026-06-01', 'Europe/Berlin')).toBeNull();
     expect(dstTransitionOn('2026-03-29', 'Asia/Kolkata')).toBeNull();
   });

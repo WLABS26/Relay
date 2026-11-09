@@ -48,35 +48,70 @@ const DEMO_USERS = [
   { key: 'kim', name: 'Kim Sato', email: 'kim@kestrel.example' },
 ] as const;
 
-async function ensureUser(ctx: ServiceContext, u: { name: string; email: string }): Promise<AuthenticatedUser> {
+async function ensureUser(
+  ctx: ServiceContext,
+  u: { name: string; email: string },
+): Promise<AuthenticatedUser> {
   return withAuthBootstrap(ctx.db, async (tx) => {
-    const existing = await tx.selectFrom('users').select(['id']).where('emailNormalized', '=', u.email).executeTakeFirst();
+    const existing = await tx
+      .selectFrom('users')
+      .select(['id'])
+      .where('emailNormalized', '=', u.email)
+      .executeTakeFirst();
     const id = existing?.id ?? ctx.ids.next();
-    if (!existing) await tx.insertInto('users').values({ id, email: u.email, emailNormalized: u.email, displayName: u.name, isDemo: true }).execute();
+    if (!existing)
+      await tx
+        .insertInto('users')
+        .values({ id, email: u.email, emailNormalized: u.email, displayName: u.name, isDemo: true })
+        .execute();
     return { userId: id, email: u.email, displayName: u.name, isDemo: true };
   });
 }
 
-async function upload(c: SeedContexts, user: AuthenticatedUser, workspaceId: string, pageId: string, name: string, mime: string): Promise<string> {
+async function upload(
+  c: SeedContexts,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  pageId: string,
+  name: string,
+  mime: string,
+): Promise<string> {
   const bytes = await readFile(path.join(REPO_ROOT, 'fixtures/media', name));
   const start = await startUpload(
     c.app,
     user,
     workspaceId,
-    { pageId, filename: name.replace(/^(\w)/, (m) => m.toUpperCase()), mimeType: mime, sizeBytes: bytes.length, declaration: { confirmed: true, statementVersion: 'first-party-v1' } },
+    {
+      pageId,
+      filename: name.replace(/^(\w)/, (m) => m.toUpperCase()),
+      mimeType: mime,
+      sizeBytes: bytes.length,
+      declaration: { confirmed: true, statementVersion: 'first-party-v1' },
+    },
     meta,
   );
   const body = start.body;
   let parts: Array<{ partNumber: number; etag: string }> | undefined;
   if (body.single) {
-    const res = await fetch(body.single.url, { method: 'PUT', body: bytes, headers: body.single.headers });
+    const res = await fetch(body.single.url, {
+      method: 'PUT',
+      body: bytes,
+      headers: body.single.headers,
+    });
     await res.arrayBuffer(); // always drain, so the socket is released cleanly
-    if (!res.ok) throw new Error(`seed upload failed (${res.status}). Is object storage running and the bucket provisioned?`);
+    if (!res.ok)
+      throw new Error(
+        `seed upload failed (${res.status}). Is object storage running and the bucket provisioned?`,
+      );
   } else {
     throw new Error('seed fixtures are expected to fit a single PUT');
   }
   await completeUpload(c.app, user, workspaceId, body.uploadId, parts ? { parts } : {}, meta);
-  const outcome = await processAssetProbe(c.worker, { workspaceId, assetId: body.assetId, uploadSessionId: body.uploadId }, { number: 1, max: 1 });
+  const outcome = await processAssetProbe(
+    c.worker,
+    { workspaceId, assetId: body.assetId, uploadSessionId: body.uploadId },
+    { number: 1, max: 1 },
+  );
   if (outcome !== 'ready') throw new Error(`seed media ${name} was ${outcome}`);
   return body.assetId;
 }
@@ -85,18 +120,33 @@ async function approvedPost(
   c: SeedContexts,
   user: AuthenticatedUser,
   workspaceId: string,
-  input: { pageId: string; title: string; caption: string; assetIds: string[]; destinationIds: string[]; approve?: boolean; submit?: boolean },
+  input: {
+    pageId: string;
+    title: string;
+    caption: string;
+    assetIds: string[];
+    destinationIds: string[];
+    approve?: boolean;
+    submit?: boolean;
+  },
 ) {
   const created = await createPost(
     c.app,
     user,
     workspaceId,
-    { pageId: input.pageId, title: input.title, caption: input.caption, mediaAssetIds: input.assetIds, destinationIds: input.destinationIds },
+    {
+      pageId: input.pageId,
+      title: input.title,
+      caption: input.caption,
+      mediaAssetIds: input.assetIds,
+      destinationIds: input.destinationIds,
+    },
     meta,
     { isSample: true },
   );
   const postId = created.body.postId;
-  if (input.submit === false) return { postId, destinations: [] as Array<{ id: string; version: number; label: string }> };
+  if (input.submit === false)
+    return { postId, destinations: [] as Array<{ id: string; version: number; label: string }> };
   await submitPost(c.app, user, workspaceId, postId, {}, meta);
   if (input.approve !== false) {
     const detail = await getPostDetail(c.app, user, workspaceId, postId);
@@ -105,16 +155,32 @@ async function approvedPost(
       user,
       workspaceId,
       postId,
-      { decisions: detail.destinations.filter((d) => d.state === 'needs_review').map((d) => ({ postDestinationId: d.id, decision: 'approve' as const, revisionId: detail.revision.id, intentHash: d.intentHash })) },
+      {
+        decisions: detail.destinations
+          .filter((d) => d.state === 'needs_review')
+          .map((d) => ({
+            postDestinationId: d.id,
+            decision: 'approve' as const,
+            revisionId: detail.revision.id,
+            intentHash: d.intentHash,
+          })),
+      },
       meta,
     );
   }
   const fresh = await getPostDetail(c.app, user, workspaceId, postId);
-  return { postId, destinations: fresh.destinations.map((d) => ({ id: d.id, version: d.version, label: d.label })) };
+  return {
+    postId,
+    destinations: fresh.destinations.map((d) => ({ id: d.id, version: d.version, label: d.label })),
+  };
 }
 
 /** Run the worker workflow synchronously until the destination settles (seed only). */
-async function drive(c: SeedContexts, workspaceId: string, postDestinationId: string): Promise<DestinationState> {
+async function drive(
+  c: SeedContexts,
+  workspaceId: string,
+  postDestinationId: string,
+): Promise<DestinationState> {
   for (let i = 0; i < 25; i++) {
     const pd = await withTenant(c.worker.db, { workspaceId }, (tx) =>
       tx
@@ -128,17 +194,36 @@ async function drive(c: SeedContexts, workspaceId: string, postDestinationId: st
     if (!pd.intentId) return state;
     if (state === 'needs_reconciliation') {
       if (pd.stateReason === 'operator_review_required') return state;
-      const r = await reconcilePublish(c.worker, { workspaceId, postDestinationId, intentId: pd.intentId }, { workerId: 'seed' });
+      const r = await reconcilePublish(
+        c.worker,
+        { workspaceId, postDestinationId, intentId: pd.intentId },
+        { workerId: 'seed' },
+      );
       if (r === 'indeterminate') return 'needs_reconciliation';
       continue;
     }
     if (!['scheduled', 'preparing', 'dispatching', 'processing'].includes(state)) return state;
-    const outcome = await advancePublish(c.worker, { workspaceId, postDestinationId, intentId: pd.intentId, intentVersion: pd.intentVersion! }, { workerId: 'seed' });
+    const outcome = await advancePublish(
+      c.worker,
+      { workspaceId, postDestinationId, intentId: pd.intentId, intentVersion: pd.intentVersion! },
+      { workerId: 'seed' },
+    );
     if (outcome.kind === 'deferred') c.clock.set(new Date(Date.parse(outcome.until) + 1000));
-    else if (outcome.kind === 'step' && ['waiting', 'rate_limited', 'retryable'].includes(outcome.result)) c.clock.advance(5 * 60_000);
-    else if (outcome.kind === 'blocked' || outcome.kind === 'stale' || outcome.kind === 'held') break;
+    else if (
+      outcome.kind === 'step' &&
+      ['waiting', 'rate_limited', 'retryable'].includes(outcome.result)
+    )
+      c.clock.advance(5 * 60_000);
+    else if (outcome.kind === 'blocked' || outcome.kind === 'stale' || outcome.kind === 'held')
+      break;
   }
-  const final = await withTenant(c.worker.db, { workspaceId }, (tx) => tx.selectFrom('postDestinations').select('state').where('id', '=', postDestinationId).executeTakeFirstOrThrow());
+  const final = await withTenant(c.worker.db, { workspaceId }, (tx) =>
+    tx
+      .selectFrom('postDestinations')
+      .select('state')
+      .where('id', '=', postDestinationId)
+      .executeTakeFirstOrThrow(),
+  );
   return final.state as DestinationState;
 }
 
@@ -147,9 +232,13 @@ export interface SeedSummary {
   users: string[];
 }
 
-export async function seedDemo(config: RelayConfig, options: { log?: (m: string) => void } = {}): Promise<SeedSummary> {
+export async function seedDemo(
+  config: RelayConfig,
+  options: { log?: (m: string) => void } = {},
+): Promise<SeedSummary> {
   const log = options.log ?? (() => {});
-  if (!config.demoMode || config.isProduction) throw new Error('The demo seed only runs with RELAY_DEMO_MODE=true outside production.');
+  if (!config.demoMode || config.isProduction)
+    throw new Error('The demo seed only runs with RELAY_DEMO_MODE=true outside production.');
   const manifest = path.join(REPO_ROOT, 'fixtures/media/manifest.json');
   if (!existsSync(manifest)) {
     log('generating synthetic media fixtures…');
@@ -163,9 +252,16 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
     clock,
   };
   try {
-    const users = Object.fromEntries(await Promise.all(DEMO_USERS.map(async (u) => [u.key, await ensureUser(c.app, u)] as const))) as Record<(typeof DEMO_USERS)[number]['key'], AuthenticatedUser>;
+    const users = Object.fromEntries(
+      await Promise.all(DEMO_USERS.map(async (u) => [u.key, await ensureUser(c.app, u)] as const)),
+    ) as Record<(typeof DEMO_USERS)[number]['key'], AuthenticatedUser>;
     const existing = await withAuthBootstrap(c.app.db, async (tx) => {
-      const m = await tx.selectFrom('workspaceMemberships').select('id').where('userId', '=', users.mara.userId).executeTakeFirst().catch(() => undefined);
+      const m = await tx
+        .selectFrom('workspaceMemberships')
+        .select('id')
+        .where('userId', '=', users.mara.userId)
+        .executeTakeFirst()
+        .catch(() => undefined);
       return Boolean(m);
     });
     if (existing) {
@@ -175,30 +271,113 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
 
     // ---- Tenant A: Fernhill Studio --------------------------------------------------------
     log('creating Fernhill Studio…');
-    const fernhill = await createWorkspace(c.app, users.mara, { name: 'Fernhill Studio', slug: 'fernhill', timezone: 'Europe/Berlin', weekStart: 'monday' }, meta, { isDemo: true });
-    const coffee = await createPage(c.app, users.mara, fernhill.id, { name: 'Fernhill Coffee', timezone: 'Europe/Berlin', goal: 'views', topics: ['brewing', 'origins'], contentPillars: ['How-to', 'Behind the bar'] }, meta, { isSample: true });
-    const trail = await createPage(c.app, users.mara, fernhill.id, { name: 'Fernhill Trail Club', timezone: 'Europe/Berlin', goal: 'followers', topics: ['trail running'], contentPillars: ['Routes', 'Gear'] }, meta, { isSample: true });
-    const lab = await createPage(c.app, users.mara, fernhill.id, { name: 'Simulator lab', timezone: 'Europe/Berlin', goal: 'views', topics: ['demo'], contentPillars: [] }, meta, { isSample: true });
+    const fernhill = await createWorkspace(
+      c.app,
+      users.mara,
+      { name: 'Fernhill Studio', slug: 'fernhill', timezone: 'Europe/Berlin', weekStart: 'monday' },
+      meta,
+      { isDemo: true },
+    );
+    const coffee = await createPage(
+      c.app,
+      users.mara,
+      fernhill.id,
+      {
+        name: 'Fernhill Coffee',
+        timezone: 'Europe/Berlin',
+        goal: 'views',
+        topics: ['brewing', 'origins'],
+        contentPillars: ['How-to', 'Behind the bar'],
+      },
+      meta,
+      { isSample: true },
+    );
+    const trail = await createPage(
+      c.app,
+      users.mara,
+      fernhill.id,
+      {
+        name: 'Fernhill Trail Club',
+        timezone: 'Europe/Berlin',
+        goal: 'followers',
+        topics: ['trail running'],
+        contentPillars: ['Routes', 'Gear'],
+      },
+      meta,
+      { isSample: true },
+    );
+    const lab = await createPage(
+      c.app,
+      users.mara,
+      fernhill.id,
+      {
+        name: 'Simulator lab',
+        timezone: 'Europe/Berlin',
+        goal: 'views',
+        topics: ['demo'],
+        contentPillars: [],
+      },
+      meta,
+      { isSample: true },
+    );
 
-    const connect = async (provider: 'youtube' | 'instagram' | 'facebook_page' | 'tiktok', displayName: string, profile: SimulatorProfile, pageId: string) => {
-      const account = await createDemoConnection(c.app, users.mara, fernhill.id, { provider, displayName, profile }, meta);
-      const dest = await addPageDestination(c.app, users.mara, fernhill.id, pageId, { socialAccountId: account.id, defaultVisibility: 'public' }, meta);
+    const connect = async (
+      provider: 'youtube' | 'instagram' | 'facebook_page' | 'tiktok',
+      displayName: string,
+      profile: SimulatorProfile,
+      pageId: string,
+    ) => {
+      const account = await createDemoConnection(
+        c.app,
+        users.mara,
+        fernhill.id,
+        { provider, displayName, profile },
+        meta,
+      );
+      const dest = await addPageDestination(
+        c.app,
+        users.mara,
+        fernhill.id,
+        pageId,
+        { socialAccountId: account.id, defaultVisibility: 'public' },
+        meta,
+      );
       return dest.id;
     };
     const coffeeYt = await connect('youtube', 'Fernhill Coffee', 'reliable', coffee.id);
     const coffeeIg = await connect('instagram', 'fernhill.coffee', 'reliable', coffee.id);
-    const coffeeFb = await connect('facebook_page', 'Fernhill Coffee', 'slow_processing', coffee.id);
+    const coffeeFb = await connect(
+      'facebook_page',
+      'Fernhill Coffee',
+      'slow_processing',
+      coffee.id,
+    );
     await connect('tiktok', 'fernhillcoffee', 'reliable', coffee.id);
     const trailYt = await connect('youtube', 'Fernhill Trail Club', 'reliable', trail.id);
     const trailIg = await connect('instagram', 'fernhill.trail', 'reliable', trail.id);
     const labReject = await connect('instagram', 'Lab · rejects media', 'reject_format', lab.id);
-    const labAmbiguous = await connect('facebook_page', 'Lab · ambiguous outcome', 'ambiguous', lab.id);
+    const labAmbiguous = await connect(
+      'facebook_page',
+      'Lab · ambiguous outcome',
+      'ambiguous',
+      lab.id,
+    );
     const labLost = await connect('youtube', 'Lab · lost response', 'lost_response', lab.id);
     await connect('youtube', 'Lab · rate limited once', 'rate_limited_once', lab.id);
 
     log('inviting the Fernhill team…');
-    const join = async (u: AuthenticatedUser, role: 'admin' | 'publisher' | 'editor' | 'viewer', pageIds?: string[]) => {
-      const invite = await inviteMember(c.app, users.mara, fernhill.id, { email: u.email, role, allPages: !pageIds, pageIds: pageIds ?? [] }, meta);
+    const join = async (
+      u: AuthenticatedUser,
+      role: 'admin' | 'publisher' | 'editor' | 'viewer',
+      pageIds?: string[],
+    ) => {
+      const invite = await inviteMember(
+        c.app,
+        users.mara,
+        fernhill.id,
+        { email: u.email, role, allPages: !pageIds, pageIds: pageIds ?? [] },
+        meta,
+      );
       await acceptInvitation(c.app, u, { token: invite.token }, meta);
     };
     await join(users.theo, 'admin');
@@ -210,13 +389,62 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
     // Upload (and declare rights) before the sample history begins: rights must already be
     // valid at every past publish time the history below replays.
     clock.set(new Date(realNow.getTime() - 14 * 86_400_000));
-    const video = await upload(c, users.eli, fernhill.id, coffee.id, 'vertical-1080x1920-8s.mp4', 'video/mp4');
-    const landscape = await upload(c, users.eli, fernhill.id, coffee.id, 'landscape-1280x720-6s.mp4', 'video/mp4');
-    const portrait = await upload(c, users.eli, fernhill.id, coffee.id, 'portrait-1080x1350.jpg', 'image/jpeg');
-    const square = await upload(c, users.eli, fernhill.id, coffee.id, 'square-1080.png', 'image/png');
-    const wide = await upload(c, users.eli, fernhill.id, coffee.id, 'landscape-1600x900.jpg', 'image/jpeg');
-    const trailVideo = await upload(c, users.eli, fernhill.id, trail.id, 'vertical-1080x1920-8s.mp4', 'video/mp4');
-    const labVideo = await upload(c, users.mara, fernhill.id, lab.id, 'vertical-1080x1920-8s.mp4', 'video/mp4');
+    const video = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      coffee.id,
+      'vertical-1080x1920-8s.mp4',
+      'video/mp4',
+    );
+    const landscape = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      coffee.id,
+      'landscape-1280x720-6s.mp4',
+      'video/mp4',
+    );
+    const portrait = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      coffee.id,
+      'portrait-1080x1350.jpg',
+      'image/jpeg',
+    );
+    const square = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      coffee.id,
+      'square-1080.png',
+      'image/png',
+    );
+    const wide = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      coffee.id,
+      'landscape-1600x900.jpg',
+      'image/jpeg',
+    );
+    const trailVideo = await upload(
+      c,
+      users.eli,
+      fernhill.id,
+      trail.id,
+      'vertical-1080x1920-8s.mp4',
+      'video/mp4',
+    );
+    const labVideo = await upload(
+      c,
+      users.mara,
+      fernhill.id,
+      lab.id,
+      'vertical-1080x1920-8s.mp4',
+      'video/mp4',
+    );
 
     // ---- History: published posts with results, produced under a clock in the past --------
     log('publishing sample history through the simulator…');
@@ -228,24 +456,50 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
     ];
     for (const h of history) {
       clock.set(new Date(realNow.getTime() - h.daysAgo * 86_400_000));
-      const p = await approvedPost(c, users.mara, fernhill.id, { pageId: coffee.id, title: h.title, caption: `${h.title.replace('Sample · ', '')} — sample caption for the demo. #coffee`, assetIds: [video], destinationIds: h.dest });
+      const p = await approvedPost(c, users.mara, fernhill.id, {
+        pageId: coffee.id,
+        title: h.title,
+        caption: `${h.title.replace('Sample · ', '')} — sample caption for the demo. #coffee`,
+        assetIds: [video],
+        destinationIds: h.dest,
+      });
       for (const d of p.destinations) {
-        await scheduleDestination(c.app, users.mara, fernhill.id, d.id, { expectedVersion: d.version, mode: 'asap' }, meta);
+        await scheduleDestination(
+          c.app,
+          users.mara,
+          fernhill.id,
+          d.id,
+          { expectedVersion: d.version, mode: 'asap' },
+          meta,
+        );
         clock.advance(10_000);
         await drive(c, fernhill.id, d.id);
       }
       const pubs = await withTenant(c.worker.db, { workspaceId: fernhill.id }, (tx) =>
-        tx.selectFrom('externalPublications as e').innerJoin('postDestinations as pd', 'pd.id', 'e.postDestinationId').select(['e.id', 'e.publishedAt']).where('pd.postId', '=', p.postId).execute(),
+        tx
+          .selectFrom('externalPublications as e')
+          .innerJoin('postDestinations as pd', 'pd.id', 'e.postDestinationId')
+          .select(['e.id', 'e.publishedAt'])
+          .where('pd.postId', '=', p.postId)
+          .execute(),
       );
       for (const pub of pubs) {
         for (const bucket of AGE_BUCKETS) {
           const at = pub.publishedAt.getTime() + bucket.hours * 3600_000;
           if (at > realNow.getTime()) continue;
           clock.set(new Date(at));
-          await refreshMetrics(c.worker, { workspaceId: fernhill.id, externalPublicationId: pub.id, ageBucket: bucket.key });
+          await refreshMetrics(c.worker, {
+            workspaceId: fernhill.id,
+            externalPublicationId: pub.id,
+            ageBucket: bucket.key,
+          });
         }
         clock.set(realNow);
-        await refreshMetrics(c.worker, { workspaceId: fernhill.id, externalPublicationId: pub.id, ageBucket: null });
+        await refreshMetrics(c.worker, {
+          workspaceId: fernhill.id,
+          externalPublicationId: pub.id,
+          ageBucket: null,
+        });
       }
     }
     clock.set(realNow);
@@ -255,30 +509,78 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
     const week = [
       { title: 'Sample · Espresso dial-in', assets: [landscape], dest: [coffeeYt] },
       { title: 'Sample · Latte art carousel', assets: [portrait, square, wide], dest: [coffeeIg] },
-      { title: 'Sample · Single-origin spotlight', assets: [video], dest: [coffeeYt, coffeeIg, coffeeFb] },
+      {
+        title: 'Sample · Single-origin spotlight',
+        assets: [video],
+        dest: [coffeeYt, coffeeIg, coffeeFb],
+      },
       { title: 'Sample · Barista Q&A', assets: [video], dest: [coffeeIg] },
       { title: 'Sample · Weekend brew guide', assets: [video], dest: [coffeeYt, coffeeFb] },
     ];
     for (const w of week) {
-      const p = await approvedPost(c, users.priya, fernhill.id, { pageId: coffee.id, title: w.title, caption: `${w.title.replace('Sample · ', '')} — sample caption.`, assetIds: w.assets, destinationIds: w.dest });
+      const p = await approvedPost(c, users.priya, fernhill.id, {
+        pageId: coffee.id,
+        title: w.title,
+        caption: `${w.title.replace('Sample · ', '')} — sample caption.`,
+        assetIds: w.assets,
+        destinationIds: w.dest,
+      });
       for (const d of p.destinations) {
-        const rec = await recommendSlotsFor(c.app, users.priya, fernhill.id, { postDestinationIds: [d.id], count: 1, horizonDays: 7 });
+        const rec = await recommendSlotsFor(c.app, users.priya, fernhill.id, {
+          postDestinationIds: [d.id],
+          count: 1,
+          horizonDays: 7,
+        });
         const slot = rec.results[0]?.suggestions[0];
         if (!slot) continue;
-        await scheduleDestination(c.app, users.priya, fernhill.id, d.id, { expectedVersion: d.version, mode: 'at', localTime: slot.civil, offset: slot.offset }, meta).catch(() => undefined);
+        await scheduleDestination(
+          c.app,
+          users.priya,
+          fernhill.id,
+          d.id,
+          { expectedVersion: d.version, mode: 'at', localTime: slot.civil, offset: slot.offset },
+          meta,
+        ).catch(() => undefined);
       }
     }
 
     // Review queue and a draft.
-    await approvedPost(c, users.eli, fernhill.id, { pageId: coffee.id, title: 'Sample · Milk steaming tips', caption: 'Needs a publisher’s review — sample caption.', assetIds: [video], destinationIds: [coffeeYt, coffeeIg], approve: false });
-    await approvedPost(c, users.eli, fernhill.id, { pageId: trail.id, title: 'Sample · Ridge loop route', caption: 'Draft — sample caption.', assetIds: [trailVideo], destinationIds: [trailYt, trailIg], submit: false });
+    await approvedPost(c, users.eli, fernhill.id, {
+      pageId: coffee.id,
+      title: 'Sample · Milk steaming tips',
+      caption: 'Needs a publisher’s review — sample caption.',
+      assetIds: [video],
+      destinationIds: [coffeeYt, coffeeIg],
+      approve: false,
+    });
+    await approvedPost(c, users.eli, fernhill.id, {
+      pageId: trail.id,
+      title: 'Sample · Ridge loop route',
+      caption: 'Draft — sample caption.',
+      assetIds: [trailVideo],
+      destinationIds: [trailYt, trailIg],
+      submit: false,
+    });
 
     // ---- Simulator lab: mixed outcomes on one post -----------------------------------------
     log('running the simulator lab (mixed outcomes)…');
-    const labPost = await approvedPost(c, users.mara, fernhill.id, { pageId: lab.id, title: 'Sample · Mixed outcomes demo', caption: 'One post, three simulated platforms with scripted behaviour.', assetIds: [labVideo], destinationIds: [labReject, labAmbiguous, labLost] });
+    const labPost = await approvedPost(c, users.mara, fernhill.id, {
+      pageId: lab.id,
+      title: 'Sample · Mixed outcomes demo',
+      caption: 'One post, three simulated platforms with scripted behaviour.',
+      assetIds: [labVideo],
+      destinationIds: [labReject, labAmbiguous, labLost],
+    });
     clock.set(new Date(realNow.getTime() - 2 * 3600_000));
     for (const d of labPost.destinations) {
-      await scheduleDestination(c.app, users.mara, fernhill.id, d.id, { expectedVersion: d.version, mode: 'asap' }, meta).catch(() => undefined);
+      await scheduleDestination(
+        c.app,
+        users.mara,
+        fernhill.id,
+        d.id,
+        { expectedVersion: d.version, mode: 'asap' },
+        meta,
+      ).catch(() => undefined);
     }
     clock.advance(10_000);
     for (const d of labPost.destinations) await drive(c, fernhill.id, d.id);
@@ -286,14 +588,60 @@ export async function seedDemo(config: RelayConfig, options: { log?: (m: string)
 
     // ---- Tenant B: Kestrel Media (isolation demo) ---------------------------------------------
     log('creating Kestrel Media…');
-    const kestrel = await createWorkspace(c.app, users.gus, { name: 'Kestrel Media', slug: 'kestrel', timezone: 'Europe/London', weekStart: 'monday' }, meta, { isDemo: true });
-    const daily = await createPage(c.app, users.gus, kestrel.id, { name: 'Kestrel Daily', timezone: 'Europe/London', goal: 'watch_time' }, meta, { isSample: true });
-    const kAccount = await createDemoConnection(c.app, users.gus, kestrel.id, { provider: 'youtube', displayName: 'Kestrel Daily', profile: 'reliable' }, meta);
-    const kDest = await addPageDestination(c.app, users.gus, kestrel.id, daily.id, { socialAccountId: kAccount.id }, meta);
-    const kInvite = await inviteMember(c.app, users.gus, kestrel.id, { email: users.kim.email, role: 'editor' }, meta);
+    const kestrel = await createWorkspace(
+      c.app,
+      users.gus,
+      { name: 'Kestrel Media', slug: 'kestrel', timezone: 'Europe/London', weekStart: 'monday' },
+      meta,
+      { isDemo: true },
+    );
+    const daily = await createPage(
+      c.app,
+      users.gus,
+      kestrel.id,
+      { name: 'Kestrel Daily', timezone: 'Europe/London', goal: 'watch_time' },
+      meta,
+      { isSample: true },
+    );
+    const kAccount = await createDemoConnection(
+      c.app,
+      users.gus,
+      kestrel.id,
+      { provider: 'youtube', displayName: 'Kestrel Daily', profile: 'reliable' },
+      meta,
+    );
+    const kDest = await addPageDestination(
+      c.app,
+      users.gus,
+      kestrel.id,
+      daily.id,
+      { socialAccountId: kAccount.id },
+      meta,
+    );
+    const kInvite = await inviteMember(
+      c.app,
+      users.gus,
+      kestrel.id,
+      { email: users.kim.email, role: 'editor' },
+      meta,
+    );
     await acceptInvitation(c.app, users.kim, { token: kInvite.token }, meta);
-    const kVideo = await upload(c, users.kim, kestrel.id, daily.id, 'landscape-1280x720-6s.mp4', 'video/mp4');
-    await approvedPost(c, users.kim, kestrel.id, { pageId: daily.id, title: 'Sample · Morning headlines', caption: 'Kestrel-only sample draft.', assetIds: [kVideo], destinationIds: [kDest.id], submit: false });
+    const kVideo = await upload(
+      c,
+      users.kim,
+      kestrel.id,
+      daily.id,
+      'landscape-1280x720-6s.mp4',
+      'video/mp4',
+    );
+    await approvedPost(c, users.kim, kestrel.id, {
+      pageId: daily.id,
+      title: 'Sample · Morning headlines',
+      caption: 'Kestrel-only sample draft.',
+      assetIds: [kVideo],
+      destinationIds: [kDest.id],
+      submit: false,
+    });
 
     return {
       workspaces: [

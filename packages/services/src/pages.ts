@@ -9,15 +9,27 @@ import {
   updatePageSchema,
   type PublishingRules,
 } from '@relay/domain';
-import { accessiblePageIds, authorize, inWorkspace, memberActor, requirePage, type AuthenticatedUser } from './access';
+import {
+  accessiblePageIds,
+  authorize,
+  inWorkspace,
+  memberActor,
+  requirePage,
+  type AuthenticatedUser,
+} from './access';
 import { appendAudit } from './audit';
 import type { RequestMeta, ServiceContext } from './context';
 import { enqueue } from './tasks';
 
-export async function loadRules(tx: Tx, pageId: string): Promise<{ revision: number; rules: PublishingRules }> {
+export async function loadRules(
+  tx: Tx,
+  pageId: string,
+): Promise<{ revision: number; rules: PublishingRules }> {
   const row = await tx
     .selectFrom('pages as p')
-    .leftJoin('pagePolicyRevisions as r', (j) => j.onRef('r.pageId', '=', 'p.id').onRef('r.revision', '=', 'p.currentPolicyRevision'))
+    .leftJoin('pagePolicyRevisions as r', (j) =>
+      j.onRef('r.pageId', '=', 'p.id').onRef('r.revision', '=', 'p.currentPolicyRevision'),
+    )
     .select(['p.currentPolicyRevision', 'r.rules'])
     .where('p.id', '=', pageId)
     .executeTakeFirst();
@@ -32,10 +44,26 @@ export async function listPages(ctx: ServiceContext, user: AuthenticatedUser, wo
     const visible = accessiblePageIds(member);
     let q = tx
       .selectFrom('pages')
-      .select(['id', 'name', 'timezone', 'weekStart', 'goal', 'isSample', 'pausedAt', 'pauseReason', 'allowedFormats', 'currentPolicyRevision'])
+      .select([
+        'id',
+        'name',
+        'timezone',
+        'weekStart',
+        'goal',
+        'isSample',
+        'pausedAt',
+        'pauseReason',
+        'allowedFormats',
+        'currentPolicyRevision',
+      ])
       .where('archivedAt', 'is', null)
       .orderBy('name');
-    if (visible) q = q.where('id', 'in', visible.length > 0 ? visible : ['00000000-0000-0000-0000-000000000000']);
+    if (visible)
+      q = q.where(
+        'id',
+        'in',
+        visible.length > 0 ? visible : ['00000000-0000-0000-0000-000000000000'],
+      );
     const pages = await q.execute();
     const destinations = await tx
       .selectFrom('pageDestinations as d')
@@ -59,12 +87,22 @@ export async function listPages(ctx: ServiceContext, user: AuthenticatedUser, wo
       .execute();
     return {
       member,
-      pages: pages.map((p) => ({ ...p, destinations: destinations.filter((d) => d.pageId === p.id) })),
+      pages: pages.map((p) => ({
+        ...p,
+        destinations: destinations.filter((d) => d.pageId === p.id),
+      })),
     };
   });
 }
 
-export async function createPage(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, rawInput: unknown, meta: RequestMeta, options: { isSample?: boolean } = {}) {
+export async function createPage(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+  options: { isSample?: boolean } = {},
+) {
   const input = createPageSchema.parse(rawInput);
   const timezone = normalizeTimeZone(input.timezone);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
@@ -88,7 +126,14 @@ export async function createPage(ctx: ServiceContext, user: AuthenticatedUser, w
       .execute();
     await tx
       .insertInto('pagePolicyRevisions')
-      .values({ id: ctx.ids.next(), workspaceId, pageId: id, revision: 1, rules: JSON.stringify(DEFAULT_PUBLISHING_RULES), createdBy: user.userId })
+      .values({
+        id: ctx.ids.next(),
+        workspaceId,
+        pageId: id,
+        revision: 1,
+        rules: JSON.stringify(DEFAULT_PUBLISHING_RULES),
+        createdBy: user.userId,
+      })
       .execute();
     await appendAudit(tx, ctx.ids, {
       workspaceId,
@@ -104,7 +149,12 @@ export async function createPage(ctx: ServiceContext, user: AuthenticatedUser, w
   });
 }
 
-export async function getPageDetail(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, pageId: string) {
+export async function getPageDetail(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  pageId: string,
+) {
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'page.view', pageId);
     const page = await requirePage(tx, member, pageId);
@@ -120,7 +170,14 @@ export async function getPageDetail(ctx: ServiceContext, user: AuthenticatedUser
   });
 }
 
-export async function updatePage(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, pageId: string, rawInput: unknown, meta: RequestMeta) {
+export async function updatePage(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  pageId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = updatePageSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'page.update', pageId);
@@ -128,12 +185,20 @@ export async function updatePage(ctx: ServiceContext, user: AuthenticatedUser, w
     const { expectedVersion, timezone, ...rest } = input;
     const updated = await tx
       .updateTable('pages')
-      .set({ ...rest, ...(timezone ? { timezone: normalizeTimeZone(timezone) } : {}), version: sql`version + 1` })
+      .set({
+        ...rest,
+        ...(timezone ? { timezone: normalizeTimeZone(timezone) } : {}),
+        version: sql`version + 1`,
+      })
       .where('id', '=', pageId)
       .where('version', '=', expectedVersion)
       .returning(['version', 'timezone'])
       .executeTakeFirst();
-    if (!updated) throw new AppError('version_conflict', 'This page changed since you loaded it. Reload and try again.');
+    if (!updated)
+      throw new AppError(
+        'version_conflict',
+        'This page changed since you loaded it. Reload and try again.',
+      );
     await appendAudit(tx, ctx.ids, {
       workspaceId,
       actor: memberActor(member),
@@ -150,7 +215,14 @@ export async function updatePage(ctx: ServiceContext, user: AuthenticatedUser, w
 }
 
 /** Publishing rules are immutable revisions; this creates revision N+1. */
-export async function putPublishingRules(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, pageId: string, rawInput: unknown, meta: RequestMeta) {
+export async function putPublishingRules(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  pageId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = putPublishingRulesSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'page.rules.update', pageId);
@@ -165,14 +237,28 @@ export async function putPublishingRules(ctx: ServiceContext, user: Authenticate
       .forUpdate()
       .executeTakeFirstOrThrow();
     if (locked.currentPolicyRevision !== input.expectedRevision) {
-      throw new AppError('version_conflict', 'The publishing rules changed since you loaded them. Reload and try again.');
+      throw new AppError(
+        'version_conflict',
+        'The publishing rules changed since you loaded them. Reload and try again.',
+      );
     }
     const revision = locked.currentPolicyRevision + 1;
     await tx
       .insertInto('pagePolicyRevisions')
-      .values({ id: ctx.ids.next(), workspaceId, pageId, revision, rules: JSON.stringify(input.rules), createdBy: user.userId })
+      .values({
+        id: ctx.ids.next(),
+        workspaceId,
+        pageId,
+        revision,
+        rules: JSON.stringify(input.rules),
+        createdBy: user.userId,
+      })
       .execute();
-    await tx.updateTable('pages').set({ currentPolicyRevision: revision, version: sql`version + 1` }).where('id', '=', pageId).execute();
+    await tx
+      .updateTable('pages')
+      .set({ currentPolicyRevision: revision, version: sql`version + 1` })
+      .where('id', '=', pageId)
+      .execute();
     await appendAudit(tx, ctx.ids, {
       workspaceId,
       actor: memberActor(member),
@@ -209,7 +295,13 @@ export async function setPagePaused(
       .updateTable('pages')
       .set(
         paused
-          ? { pausedAt: now, pausedBy: user.userId, pauseReason: reason ?? null, pauseGeneration: sql`pause_generation + 1`, version: sql`version + 1` }
+          ? {
+              pausedAt: now,
+              pausedBy: user.userId,
+              pauseReason: reason ?? null,
+              pauseGeneration: sql`pause_generation + 1`,
+              version: sql`version + 1`,
+            }
           : { pausedAt: null, pausedBy: null, pauseReason: null, version: sql`version + 1` },
       )
       .where('id', '=', pageId)
@@ -223,12 +315,16 @@ export async function setPagePaused(
       .where('p.pageId', '=', pageId)
       .where('pd.state', 'in', ['scheduled', 'preparing', 'dispatching', 'processing', 'blocked'])
       .execute();
-    const inFlight = destinations.filter((d) => d.state === 'dispatching' || d.state === 'processing');
+    const inFlight = destinations.filter(
+      (d) => d.state === 'dispatching' || d.state === 'processing',
+    );
     let resumed = 0;
     if (!paused) {
       // Destinations held by the pause continue if their intent is still active; the worker
       // re-checks lateness and routes anything past the grace window to review.
-      for (const d of destinations.filter((x) => x.state === 'blocked' && x.stateReason === 'page_paused' && x.activeIntentId)) {
+      for (const d of destinations.filter(
+        (x) => x.state === 'blocked' && x.stateReason === 'page_paused' && x.activeIntentId,
+      )) {
         const intent = await tx
           .selectFrom('publishIntents')
           .select(['id', 'intentVersion'])
@@ -238,11 +334,26 @@ export async function setPagePaused(
         if (!intent) continue;
         await tx
           .updateTable('postDestinations')
-          .set({ state: 'scheduled', stateReason: null, stateChangedAt: now, version: sql`version + 1` })
+          .set({
+            state: 'scheduled',
+            stateReason: null,
+            stateChangedAt: now,
+            version: sql`version + 1`,
+          })
           .where('id', '=', d.id)
           .where('state', '=', 'blocked')
           .execute();
-        await enqueue(tx, 'publish.advance', { workspaceId, postDestinationId: d.id, intentId: intent.id, intentVersion: intent.intentVersion }, { jobKey: `publish:${d.id}` });
+        await enqueue(
+          tx,
+          'publish.advance',
+          {
+            workspaceId,
+            postDestinationId: d.id,
+            intentId: intent.id,
+            intentVersion: intent.intentVersion,
+          },
+          { jobKey: `publish:${d.id}` },
+        );
         resumed++;
       }
     }
@@ -253,7 +364,12 @@ export async function setPagePaused(
       entityType: 'page',
       entityId: pageId,
       pageId,
-      data: { reason: reason ?? null, pauseGeneration: row.pauseGeneration, inFlight: inFlight.length, resumed },
+      data: {
+        reason: reason ?? null,
+        pauseGeneration: row.pauseGeneration,
+        inFlight: inFlight.length,
+        resumed,
+      },
       requestId: meta.requestId,
     });
     return {

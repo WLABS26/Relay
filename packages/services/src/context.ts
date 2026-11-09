@@ -54,12 +54,14 @@ export function createServiceContext(options: CreateContextOptions): ServiceCont
   const { config, role } = options;
   // First, so an unsupported deployment fails before any pool is opened.
   const encryptor = createEncryptor(config);
-  const logger = options.logger ?? createLogger({ level: config.ops.logLevel, service: `relay-${role}` });
+  const logger =
+    options.logger ?? createLogger({ level: config.ops.logLevel, service: `relay-${role}` });
   const pool = createPool({
     connectionString: role === 'app' ? config.database.appUrl : config.database.workerUrl,
     max: options.poolMax ?? config.database.poolMax,
     applicationName: `relay-${role}`,
-    onError: (error) => logger.error({ err: { message: error.message } }, 'idle database client error'),
+    onError: (error) =>
+      logger.error({ err: { message: error.message } }, 'idle database client error'),
   });
   const db = createDatabase(pool);
   const clock = options.clock ?? systemClock;

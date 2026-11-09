@@ -8,4 +8,6 @@ export const POST = api<P>({}, async (c) => {
   return setPagePaused(c.ctx, c.user, c.params.workspaceId, c.params.pageId, true, reason, meta(c));
 });
 /** Resume. */
-export const DELETE = api<P>({}, async (c) => setPagePaused(c.ctx, c.user, c.params.workspaceId, c.params.pageId, false, undefined, meta(c)));
+export const DELETE = api<P>({}, async (c) =>
+  setPagePaused(c.ctx, c.user, c.params.workspaceId, c.params.pageId, false, undefined, meta(c)),
+);

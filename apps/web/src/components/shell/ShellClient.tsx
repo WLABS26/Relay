@@ -3,7 +3,22 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
-import { ChartColumn, CalendarDays, Inbox, LayoutList, LogOut, Menu, Moon, Scissors, Settings, Sun, Upload, Users, Plug, Monitor } from 'lucide-react';
+import {
+  ChartColumn,
+  CalendarDays,
+  Inbox,
+  LayoutList,
+  LogOut,
+  Menu,
+  Moon,
+  Scissors,
+  Settings,
+  Sun,
+  Upload,
+  Users,
+  Plug,
+  Monitor,
+} from 'lucide-react';
 import { apiFetch } from '@/lib/client/api';
 
 const NAV = [
@@ -32,7 +47,11 @@ export function SidebarNav({ slug }: { slug: string }) {
     const href = `/w/${slug}/${item.href}`;
     const active = pathname === href || pathname.startsWith(`${href}/`);
     return (
-      <Link key={item.href} href={`${href}${item.href.startsWith('settings') ? '' : suffix}`} aria-current={active ? 'page' : undefined}>
+      <Link
+        key={item.href}
+        href={`${href}${item.href.startsWith('settings') ? '' : suffix}`}
+        aria-current={active ? 'page' : undefined}
+      >
         {item.icon}
         {item.label}
       </Link>
@@ -53,7 +72,12 @@ export function SidebarFrame({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <aside className="app-sidebar" data-open={open ? 'true' : 'false'}>
-      <button type="button" className="r-button r-button--secondary mobile-nav-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className="r-button r-button--secondary mobile-nav-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
         <Menu aria-hidden /> Menu
       </button>
       {children}
@@ -62,7 +86,11 @@ export function SidebarFrame({ children }: { children: ReactNode }) {
 }
 
 /** Page filter: a native select (keyboard accessible) that rewrites the stable ?page= param. */
-export function PageSwitcher({ pages }: { pages: Array<{ id: string; name: string; pausedAt: string | null }> }) {
+export function PageSwitcher({
+  pages,
+}: {
+  pages: Array<{ id: string; name: string; pausedAt: string | null }>;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
@@ -97,7 +125,14 @@ export function PageSwitcher({ pages }: { pages: Array<{ id: string; name: strin
 export function ThemeToggle({ current }: { current: 'light' | 'dark' | 'system' }) {
   const router = useRouter();
   const next = current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system';
-  const icon = current === 'light' ? <Sun aria-hidden /> : current === 'dark' ? <Moon aria-hidden /> : <Monitor aria-hidden />;
+  const icon =
+    current === 'light' ? (
+      <Sun aria-hidden />
+    ) : current === 'dark' ? (
+      <Moon aria-hidden />
+    ) : (
+      <Monitor aria-hidden />
+    );
   return (
     <button
       type="button"
@@ -105,7 +140,10 @@ export function ThemeToggle({ current }: { current: 'light' | 'dark' | 'system' 
       aria-label={`Theme: ${current}. Switch to ${next}`}
       title={`Theme: ${current}`}
       onClick={() => {
-        document.cookie = next === 'system' ? 'relay_theme=; path=/; max-age=0; samesite=lax' : `relay_theme=${next}; path=/; max-age=31536000; samesite=lax`;
+        document.cookie =
+          next === 'system'
+            ? 'relay_theme=; path=/; max-age=0; samesite=lax'
+            : `relay_theme=${next}; path=/; max-age=31536000; samesite=lax`;
         router.refresh();
       }}
     >

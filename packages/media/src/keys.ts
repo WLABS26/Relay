@@ -9,11 +9,18 @@ import { isUuid } from '@relay/domain';
 const EXT_RE = /^[a-z0-9]{1,8}$/;
 
 function assertScope(workspaceId: string, assetId: string, version: number): void {
-  if (!isUuid(workspaceId) || !isUuid(assetId)) throw new Error('object keys require UUID workspace and asset IDs');
-  if (!Number.isInteger(version) || version < 1) throw new Error('version must be a positive integer');
+  if (!isUuid(workspaceId) || !isUuid(assetId))
+    throw new Error('object keys require UUID workspace and asset IDs');
+  if (!Number.isInteger(version) || version < 1)
+    throw new Error('version must be a positive integer');
 }
 
-export function assetOriginalKey(workspaceId: string, assetId: string, version: number, extension: string): string {
+export function assetOriginalKey(
+  workspaceId: string,
+  assetId: string,
+  version: number,
+  extension: string,
+): string {
   assertScope(workspaceId, assetId, version);
   const ext = EXT_RE.test(extension) ? extension : 'bin';
   return `ws/${workspaceId}/assets/${assetId}/v${version}/original.${ext}`;

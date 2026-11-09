@@ -42,7 +42,11 @@ export async function withTenant<T>(
 }
 
 /** User context without a workspace: list own memberships, resolve workspace by slug. */
-export async function withUser<T>(db: Database, userId: string, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function withUser<T>(
+  db: Database,
+  userId: string,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
   assertUuid(userId, 'User');
   return db.transaction().execute(async (tx) => {
     await sql`SELECT set_config('relay.user_id', ${userId}, true)`.execute(tx);
@@ -63,7 +67,10 @@ export async function withAuthBootstrap<T>(db: Database, fn: (tx: Tx) => Promise
  * intents). Policies grant this SELECT-only visibility to the relay_worker role; acting on a
  * found item always happens in a separate `withTenant` transaction.
  */
-export async function withMaintenanceScope<T>(db: Database, fn: (tx: Tx) => Promise<T>): Promise<T> {
+export async function withMaintenanceScope<T>(
+  db: Database,
+  fn: (tx: Tx) => Promise<T>,
+): Promise<T> {
   return db.transaction().execute(async (tx) => {
     await sql`SELECT set_config('relay.scope', 'maintenance', true)`.execute(tx);
     return fn(tx);

@@ -16,16 +16,32 @@ export interface WorkspaceSummary {
 }
 
 /** Workspaces the user belongs to (workspace switcher). Uses the user context only. */
-export async function listMyWorkspaces(ctx: ServiceContext, user: AuthenticatedUser): Promise<WorkspaceSummary[]> {
+export async function listMyWorkspaces(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+): Promise<WorkspaceSummary[]> {
   return withUser(ctx.db, user.userId, async (tx) => {
     const rows = await tx
       .selectFrom('workspaceMemberships as m')
       .innerJoin('workspaces as w', 'w.id', 'm.workspaceId')
-      .select(['w.id', 'w.slug', 'w.name', 'm.role', 'w.isDemo', 'w.timezone', 'w.weekStart', 'w.pausedAt'])
+      .select([
+        'w.id',
+        'w.slug',
+        'w.name',
+        'm.role',
+        'w.isDemo',
+        'w.timezone',
+        'w.weekStart',
+        'w.pausedAt',
+      ])
       .where('m.userId', '=', user.userId)
       .orderBy('w.name')
       .execute();
-    return rows.map((r) => ({ ...r, role: r.role as Role, weekStart: r.weekStart as 'monday' | 'sunday' }));
+    return rows.map((r) => ({
+      ...r,
+      role: r.role as Role,
+      weekStart: r.weekStart as 'monday' | 'sunday',
+    }));
   });
 }
 
@@ -33,12 +49,18 @@ export async function listMyWorkspaces(ctx: ServiceContext, user: AuthenticatedU
  * Resolve a URL slug to a workspace ID for the signed-in user. A slug is only a locator:
  * authorization always happens again against the membership inside the tenant transaction.
  */
-export async function resolveWorkspaceSlug(ctx: ServiceContext, user: AuthenticatedUser, slug: string): Promise<string> {
+export async function resolveWorkspaceSlug(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  slug: string,
+): Promise<string> {
   if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new AppError('not_found', 'Workspace not found');
   const row = await withUser(ctx.db, user.userId, (tx) =>
     tx
       .selectFrom('workspaces as w')
-      .innerJoin('workspaceMemberships as m', (j) => j.onRef('m.workspaceId', '=', 'w.id').on('m.userId', '=', user.userId))
+      .innerJoin('workspaceMemberships as m', (j) =>
+        j.onRef('m.workspaceId', '=', 'w.id').on('m.userId', '=', user.userId),
+      )
       .select('w.id')
       .where('w.slug', '=', slug)
       .executeTakeFirst(),
@@ -73,7 +95,13 @@ export async function createWorkspace(
         .execute();
       await tx
         .insertInto('workspaceMemberships')
-        .values({ id: ctx.ids.next(), workspaceId: id, userId: user.userId, role: 'owner', allPages: true })
+        .values({
+          id: ctx.ids.next(),
+          workspaceId: id,
+          userId: user.userId,
+          role: 'owner',
+          allPages: true,
+        })
         .execute();
       await appendAudit(tx, ctx.ids, {
         workspaceId: id,
@@ -87,17 +115,27 @@ export async function createWorkspace(
     });
   } catch (error) {
     if (isUniqueViolation(error, 'workspaces_slug_key')) {
-      throw new AppError('validation_failed', 'That workspace address is taken.', { fieldErrors: { slug: ['Already in use'] } });
+      throw new AppError('validation_failed', 'That workspace address is taken.', {
+        fieldErrors: { slug: ['Already in use'] },
+      });
     }
     throw error;
   }
   return { id, slug: input.slug };
 }
 
-export async function getWorkspace(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string) {
+export async function getWorkspace(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+) {
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'workspace.view');
-    const ws = await tx.selectFrom('workspaces').selectAll().where('id', '=', workspaceId).executeTakeFirstOrThrow();
+    const ws = await tx
+      .selectFrom('workspaces')
+      .selectAll()
+      .where('id', '=', workspaceId)
+      .executeTakeFirstOrThrow();
     return { workspace: ws, member };
   });
 }
@@ -117,7 +155,12 @@ export async function setWorkspacePaused(
       .updateTable('workspaces')
       .set(
         paused
-          ? { pausedAt: now, pauseReason: reason ?? null, pauseGeneration: sql`pause_generation + 1`, version: sql`version + 1` }
+          ? {
+              pausedAt: now,
+              pauseReason: reason ?? null,
+              pauseGeneration: sql`pause_generation + 1`,
+              version: sql`version + 1`,
+            }
           : { pausedAt: null, pauseReason: null, version: sql`version + 1` },
       )
       .where('id', '=', workspaceId)
@@ -134,10 +177,18 @@ export async function setWorkspacePaused(
       action: paused ? 'workspace.paused' : 'workspace.resumed',
       entityType: 'workspace',
       entityId: workspaceId,
-      data: { reason: reason ?? null, pauseGeneration: row.pauseGeneration, inFlight: Number(inFlight.n) },
+      data: {
+        reason: reason ?? null,
+        pauseGeneration: row.pauseGeneration,
+        inFlight: Number(inFlight.n),
+      },
       requestId: meta.requestId,
     });
-    return { pausedAt: row.pausedAt, pauseGeneration: row.pauseGeneration, inFlight: Number(inFlight.n) };
+    return {
+      pausedAt: row.pausedAt,
+      pauseGeneration: row.pauseGeneration,
+      inFlight: Number(inFlight.n),
+    };
   });
 }
 

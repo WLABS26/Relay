@@ -59,7 +59,11 @@ export function definitionsComparable(a: MetricDefinitionRef, b: MetricDefinitio
 }
 
 /** Stable identity of an observation for idempotent upserts. */
-export function observationKey(input: { ageBucket?: AgeBucket | null; periodStart?: string | null; periodEnd?: string | null }): string {
+export function observationKey(input: {
+  ageBucket?: AgeBucket | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+}): string {
   if (input.ageBucket) return `age:${input.ageBucket}`;
   if (input.periodStart && input.periodEnd) return `period:${input.periodStart}/${input.periodEnd}`;
   return 'latest';

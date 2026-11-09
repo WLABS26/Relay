@@ -51,12 +51,25 @@ export function StateBadge({ state, label }: { state: DestinationState; label?: 
   );
 }
 
-export function RollupBadge({ rollup }: { rollup: { kind: string; label: string; state?: DestinationState; attention?: DestinationState | null } }) {
+export function RollupBadge({
+  rollup,
+}: {
+  rollup: {
+    kind: string;
+    label: string;
+    state?: DestinationState;
+    attention?: DestinationState | null;
+  };
+}) {
   if (rollup.kind === 'uniform' && rollup.state) return <StateBadge state={rollup.state} />;
   if (rollup.kind === 'mixed') {
     const tone = rollup.attention ? STATE_STYLE[rollup.attention].tone : 'neutral';
     return (
-      <Badge tone={tone} icon={rollup.attention ? STATE_STYLE[rollup.attention].icon : undefined} title={rollup.label}>
+      <Badge
+        tone={tone}
+        icon={rollup.attention ? STATE_STYLE[rollup.attention].icon : undefined}
+        title={rollup.label}
+      >
         {rollup.label}
       </Badge>
     );

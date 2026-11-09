@@ -8,7 +8,11 @@ import { loadWorkspace } from '@/lib/server/workspace';
 
 export const metadata: Metadata = { title: 'Post' };
 
-export default async function PostPage({ params }: { params: Promise<{ slug: string; postId: string }> }) {
+export default async function PostPage({
+  params,
+}: {
+  params: Promise<{ slug: string; postId: string }>;
+}) {
   const { slug, postId } = await params;
   if (!isUuid(postId)) notFound();
   const wc = await loadWorkspace(slug);
@@ -33,8 +37,18 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
   const visibilityOptions = Object.fromEntries(
     data.destinations.map((d) => [
       d.id,
-      d.account.connectionMode === 'simulated' ? [...SIMULATOR_FORMAT_PROFILES[d.account.provider as DestinationProviderId].visibilities] : [...VISIBILITIES],
+      d.account.connectionMode === 'simulated'
+        ? [...SIMULATOR_FORMAT_PROFILES[d.account.provider as DestinationProviderId].visibilities]
+        : [...VISIBILITIES],
     ]),
   );
-  return <PostWorkspace slug={slug} workspaceId={wc.workspace.id} data={data} perms={perms} visibilityOptions={visibilityOptions} />;
+  return (
+    <PostWorkspace
+      slug={slug}
+      workspaceId={wc.workspace.id}
+      data={data}
+      perms={perms}
+      visibilityOptions={visibilityOptions}
+    />
+  );
 }

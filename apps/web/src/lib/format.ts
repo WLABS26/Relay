@@ -6,7 +6,11 @@
 
 export const LOCALE = 'en-GB';
 
-export function formatDateTime(value: Date | string | null | undefined, zone: string, options: Intl.DateTimeFormatOptions = {}): string {
+export function formatDateTime(
+  value: Date | string | null | undefined,
+  zone: string,
+  options: Intl.DateTimeFormatOptions = {},
+): string {
   if (!value) return '—';
   const d = typeof value === 'string' ? new Date(value) : value;
   return new Intl.DateTimeFormat(LOCALE, {
@@ -22,24 +26,44 @@ export function formatDateTime(value: Date | string | null | undefined, zone: st
 }
 
 export function formatTime(value: Date | string, zone: string): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(typeof value === 'string' ? new Date(value) : value);
+  return new Intl.DateTimeFormat(LOCALE, {
+    timeZone: zone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(typeof value === 'string' ? new Date(value) : value);
 }
 
 export function formatDay(isoDate: string): string {
   // isoDate is a civil date; format at noon UTC so no zone can shift the day.
-  return new Intl.DateTimeFormat(LOCALE, { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${isoDate}T12:00:00Z`));
+  return new Intl.DateTimeFormat(LOCALE, {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date(`${isoDate}T12:00:00Z`));
 }
 
 export function formatDayShort(isoDate: string): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${isoDate}T12:00:00Z`));
+  return new Intl.DateTimeFormat(LOCALE, {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(`${isoDate}T12:00:00Z`));
 }
 
 export function zoneLabel(zone: string, at: Date = new Date()): string {
-  const part = new Intl.DateTimeFormat(LOCALE, { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(at).find((p) => p.type === 'timeZoneName');
+  const part = new Intl.DateTimeFormat(LOCALE, { timeZone: zone, timeZoneName: 'shortOffset' })
+    .formatToParts(at)
+    .find((p) => p.type === 'timeZoneName');
   return `${zone.replace(/_/g, ' ')} (${part?.value ?? zone})`;
 }
 
-export function formatNumber(value: number | null | undefined, options: Intl.NumberFormatOptions = {}): string {
+export function formatNumber(
+  value: number | null | undefined,
+  options: Intl.NumberFormatOptions = {},
+): string {
   if (value === null || value === undefined) return '—';
   return new Intl.NumberFormat(LOCALE, options).format(value);
 }

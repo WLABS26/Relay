@@ -13,12 +13,17 @@ export interface TestDatabaseUrls {
   worker: string;
 }
 
-export function testDatabaseUrls(database: string, env: Record<string, string | undefined> = process.env): TestDatabaseUrls {
+export function testDatabaseUrls(
+  database: string,
+  env: Record<string, string | undefined> = process.env,
+): TestDatabaseUrls {
   const migrator = env.DATABASE_URL_MIGRATOR;
   const app = env.DATABASE_URL_APP;
   const worker = env.DATABASE_URL_WORKER;
   if (!migrator || !app || !worker) {
-    throw new Error('DATABASE_URL_MIGRATOR, DATABASE_URL_APP and DATABASE_URL_WORKER must be set for integration tests');
+    throw new Error(
+      'DATABASE_URL_MIGRATOR, DATABASE_URL_APP and DATABASE_URL_WORKER must be set for integration tests',
+    );
   }
   return {
     migrator: withDatabase(migrator, database),

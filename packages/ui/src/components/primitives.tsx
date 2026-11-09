@@ -16,11 +16,27 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   busy?: boolean;
 }
 
-export function Button({ variant = 'secondary', icon, block, busy, className, children, disabled, type = 'button', ...rest }: ButtonProps) {
+export function Button({
+  variant = 'secondary',
+  icon,
+  block,
+  busy,
+  className,
+  children,
+  disabled,
+  type = 'button',
+  ...rest
+}: ButtonProps) {
   return (
     <button
       type={type}
-      className={cx('r-button', `r-button--${variant}`, block && 'r-button--block', !children && 'r-button--icon', className)}
+      className={cx(
+        'r-button',
+        `r-button--${variant}`,
+        block && 'r-button--block',
+        !children && 'r-button--icon',
+        className,
+      )}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...rest}
@@ -43,7 +59,17 @@ export function linkButtonClass(variant: ButtonVariant = 'secondary', extra?: st
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
 
-export function Badge({ tone = 'neutral', icon, children, title }: { tone?: Tone | 'sim' | 'sample'; icon?: ReactNode; children: ReactNode; title?: string }) {
+export function Badge({
+  tone = 'neutral',
+  icon,
+  children,
+  title,
+}: {
+  tone?: Tone | 'sim' | 'sample';
+  icon?: ReactNode;
+  children: ReactNode;
+  title?: string;
+}) {
   return (
     <span className={cx('r-badge', `r-badge--${tone}`)} title={title}>
       {icon}
@@ -55,7 +81,10 @@ export function Badge({ tone = 'neutral', icon, children, title }: { tone?: Tone
 /** Marks anything produced by the provider simulator. Always visible, never only colour. */
 export function SimulatedBadge({ label = 'Simulated' }: { label?: string }) {
   return (
-    <span className="r-badge r-badge--sim" title="Produced by Relay’s deterministic provider simulator — not a live platform">
+    <span
+      className="r-badge r-badge--sim"
+      title="Produced by Relay’s deterministic provider simulator — not a live platform"
+    >
       {label}
     </span>
   );
@@ -77,7 +106,17 @@ const BANNER_ICONS: Record<Tone, ReactNode> = {
   neutral: <Info aria-hidden />,
 };
 
-export function Banner({ tone = 'info', title, children, live }: { tone?: Tone; title?: ReactNode; children?: ReactNode; live?: boolean }) {
+export function Banner({
+  tone = 'info',
+  title,
+  children,
+  live,
+}: {
+  tone?: Tone;
+  title?: ReactNode;
+  children?: ReactNode;
+  live?: boolean;
+}) {
   const role = live ? (tone === 'danger' ? 'alert' : 'status') : undefined;
   return (
     <div className={cx('r-banner', `r-banner--${tone}`)} role={role}>
@@ -90,7 +129,19 @@ export function Banner({ tone = 'info', title, children, live }: { tone?: Tone; 
   );
 }
 
-export function Card({ children, flat, className, as: As = 'section', ...rest }: { children: ReactNode; flat?: boolean; className?: string; as?: 'section' | 'div' | 'article' | 'li'; 'aria-labelledby'?: string }) {
+export function Card({
+  children,
+  flat,
+  className,
+  as: As = 'section',
+  ...rest
+}: {
+  children: ReactNode;
+  flat?: boolean;
+  className?: string;
+  as?: 'section' | 'div' | 'article' | 'li';
+  'aria-labelledby'?: string;
+}) {
   return (
     <As className={cx('r-card', flat && 'r-card--flat', className)} {...rest}>
       {children}
@@ -98,14 +149,28 @@ export function Card({ children, flat, className, as: As = 'section', ...rest }:
   );
 }
 
-export function EmptyState({ icon, title, children, action }: { icon?: ReactNode; title: string; children?: ReactNode; action?: ReactNode }) {
+export function EmptyState({
+  icon,
+  title,
+  children,
+  action,
+}: {
+  icon?: ReactNode;
+  title: string;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
     <div className="r-empty">
       {icon}
       <h2 className="r-strong" style={{ fontSize: 'var(--text-md)' }}>
         {title}
       </h2>
-      {children ? <div className="r-small" style={{ maxWidth: 480 }}>{children}</div> : null}
+      {children ? (
+        <div className="r-small" style={{ maxWidth: 480 }}>
+          {children}
+        </div>
+      ) : null}
       {action}
     </div>
   );
@@ -145,8 +210,13 @@ export function Field({
 }
 
 /** aria-describedby value for an input inside <Field>. */
-export function describedBy(id: string, options: { hint?: unknown; error?: unknown }): string | undefined {
-  const ids = [options.hint ? `${id}-hint` : null, options.error ? `${id}-error` : null].filter(Boolean);
+export function describedBy(
+  id: string,
+  options: { hint?: unknown; error?: unknown },
+): string | undefined {
+  const ids = [options.hint ? `${id}-hint` : null, options.error ? `${id}-error` : null].filter(
+    Boolean,
+  );
   return ids.length ? ids.join(' ') : undefined;
 }
 
@@ -162,7 +232,14 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
 export function ProgressBar({ value, label }: { value: number; label: string }) {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   return (
-    <div className="r-progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={clamped}>
+    <div
+      className="r-progress"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={clamped}
+    >
       <div className="r-progress__bar" style={{ transform: `scaleX(${clamped / 100})` }} />
     </div>
   );
@@ -172,7 +249,13 @@ export function VisuallyHidden({ children }: { children: ReactNode }) {
   return <span className="r-visually-hidden">{children}</span>;
 }
 
-export function Skeleton({ width = '100%', height = 16 }: { width?: number | string; height?: number }) {
+export function Skeleton({
+  width = '100%',
+  height = 16,
+}: {
+  width?: number | string;
+  height?: number;
+}) {
   return <div className="r-skeleton" style={{ width, height }} aria-hidden />;
 }
 
@@ -180,7 +263,14 @@ export function RTile({ size = 28 }: { size?: number }) {
   return (
     <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden focusable="false">
       <rect width="32" height="32" rx="8" fill="#C4C5C3" />
-      <path d="M11 24V8h6.5a4.5 4.5 0 0 1 0 9H11m5.5 0L22 24" fill="none" stroke="#141414" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M11 24V8h6.5a4.5 4.5 0 0 1 0 9H11m5.5 0L22 24"
+        fill="none"
+        stroke="#141414"
+        strokeWidth="2.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -190,7 +280,9 @@ export function Wordmark({ size = 28 }: { size?: number }) {
   return (
     <span className="r-row-tight" style={{ gap: 10 }}>
       <RTile size={size} />
-      <span style={{ fontWeight: 600, fontSize: size * 0.68, letterSpacing: '-0.01em' }}>Relay</span>
+      <span style={{ fontWeight: 600, fontSize: size * 0.68, letterSpacing: '-0.01em' }}>
+        Relay
+      </span>
     </span>
   );
 }

@@ -1,7 +1,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hostname } from 'node:os';
 import pg from 'pg';
-import { Logger, parseCronItems, run, type Runner, type Task, type TaskList } from 'graphile-worker';
+import {
+  Logger,
+  parseCronItems,
+  run,
+  type Runner,
+  type Task,
+  type TaskList,
+} from 'graphile-worker';
 import { isConfigError, loadConfig, type RelayConfig } from '@relay/config';
 import { loadDotEnv } from '@relay/config/dotenv';
 import { checkDatabase, REQUIRED_SCHEMA_VERSION } from '@relay/db';
@@ -55,34 +62,62 @@ const schema = await checkDatabase(ctx.db).catch((error: unknown) => {
   process.exit(1);
 });
 if (!schema.schemaVersion || schema.schemaVersion < REQUIRED_SCHEMA_VERSION) {
-  log.fatal({ found: schema.schemaVersion, required: REQUIRED_SCHEMA_VERSION }, 'database schema is older than this build; run `pnpm db:migrate`');
+  log.fatal(
+    { found: schema.schemaVersion, required: REQUIRED_SCHEMA_VERSION },
+    'database schema is older than this build; run `pnpm db:migrate`',
+  );
   process.exit(1);
 }
 
 function handlers(pool: 'general' | 'media'): TaskList {
   const workerId = `${workerBase}-${pool}`;
   const list: Partial<Record<TaskName, Task>> = {};
-  const wrap = (name: TaskName, fn: (payload: unknown, attempt: { number: number; max: number }) => Promise<unknown>): Task =>
+  const wrap =
+    (
+      name: TaskName,
+      fn: (payload: unknown, attempt: { number: number; max: number }) => Promise<unknown>,
+    ): Task =>
     async (payload, helpers) => {
       const started = Date.now();
       try {
-        const outcome = await fn(payload, { number: helpers.job.attempts, max: helpers.job.max_attempts });
-        log.info({ task: name, jobId: helpers.job.id, ms: Date.now() - started, outcome }, 'task done');
+        const outcome = await fn(payload, {
+          number: helpers.job.attempts,
+          max: helpers.job.max_attempts,
+        });
+        log.info(
+          { task: name, jobId: helpers.job.id, ms: Date.now() - started, outcome },
+          'task done',
+        );
       } catch (error) {
-        log.warn({ task: name, jobId: helpers.job.id, attempt: helpers.job.attempts, err: safeError(error) }, 'task failed');
+        log.warn(
+          {
+            task: name,
+            jobId: helpers.job.id,
+            attempt: helpers.job.attempts,
+            err: safeError(error),
+          },
+          'task failed',
+        );
         throw error;
       }
     };
   for (const name of tasksForPool(pool)) {
     switch (name) {
       case 'asset.probe':
-        list[name] = wrap(name, (p, attempt) => processAssetProbe(ctx, parseTaskPayload(name, p), attempt));
+        list[name] = wrap(name, (p, attempt) =>
+          processAssetProbe(ctx, parseTaskPayload(name, p), attempt),
+        );
         break;
       case 'publish.advance':
-        list[name] = wrap(name, async (p) => (await advancePublish(ctx, parseTaskPayload(name, p), { workerId })).kind);
+        list[name] = wrap(
+          name,
+          async (p) => (await advancePublish(ctx, parseTaskPayload(name, p), { workerId })).kind,
+        );
         break;
       case 'publish.reconcile':
-        list[name] = wrap(name, (p) => reconcilePublish(ctx, parseTaskPayload(name, p), { workerId }));
+        list[name] = wrap(name, (p) =>
+          reconcilePublish(ctx, parseTaskPayload(name, p), { workerId }),
+        );
         break;
       case 'metrics.refresh':
         list[name] = wrap(name, (p) => refreshMetrics(ctx, parseTaskPayload(name, p)));
@@ -102,24 +137,34 @@ function handlers(pool: 'general' | 'media'): TaskList {
 }
 
 const graphileLogger = new Logger((scope) => (level, message, meta) => {
-  const entry = { scope: { label: scope.label, taskIdentifier: scope.taskIdentifier }, ...(meta ? { meta: JSON.stringify(meta).slice(0, 500) } : {}) };
+  const entry = {
+    scope: { label: scope.label, taskIdentifier: scope.taskIdentifier },
+    ...(meta ? { meta: JSON.stringify(meta).slice(0, 500) } : {}),
+  };
   if (level === 'error') log.error(entry, message);
   else if (level === 'warning') log.warn(entry, message);
   else if (level === 'info') log.debug(entry, message);
 });
 
 // Graphile Worker gets its own pool with pg's default type parsers.
-const queuePool = new pg.Pool({ connectionString: config.database.workerUrl, max: config.worker.generalConcurrency + config.worker.mediaConcurrency + 4, application_name: 'relay-worker-queue' });
+const queuePool = new pg.Pool({
+  connectionString: config.database.workerUrl,
+  max: config.worker.generalConcurrency + config.worker.mediaConcurrency + 4,
+  application_name: 'relay-worker-queue',
+});
 queuePool.on('error', (error) => log.error({ err: safeError(error) }, 'queue pool client error'));
 // Graphile holds a long-lived LISTEN client; a dropped connection must surface as a logged
 // error (Graphile then reconnects), never as an unhandled 'error' event that kills the worker.
-queuePool.on('connect', (client) => client.on('error', (error) => log.error({ err: safeError(error) }, 'queue client error')));
+queuePool.on('connect', (client) =>
+  client.on('error', (error) => log.error({ err: safeError(error) }, 'queue client error')),
+);
 
 const runners: Runner[] = [];
 for (const pool of config.worker.pools) {
   const runner = await run({
     pgPool: queuePool,
-    concurrency: pool === 'media' ? config.worker.mediaConcurrency : config.worker.generalConcurrency,
+    concurrency:
+      pool === 'media' ? config.worker.mediaConcurrency : config.worker.generalConcurrency,
     noHandleSignals: true,
     pollInterval: 1000,
     logger: graphileLogger,
@@ -128,15 +173,53 @@ for (const pool of config.worker.pools) {
       ? {
           // Structured cron items (task identifiers contain dots, which crontab syntax rejects).
           parsedCronItems: parseCronItems([
-            { task: 'maintenance.reconcile_due', identifier: 'reconcile_due', match: '* * * * *', options: { backfillPeriod: 0, maxAttempts: 1, jobKey: 'cron_reconcile_due', jobKeyMode: 'replace' } },
-            { task: 'maintenance.expire_uploads', identifier: 'expire_uploads', match: '*/10 * * * *', options: { backfillPeriod: 0, maxAttempts: 1, jobKey: 'cron_expire_uploads', jobKeyMode: 'replace' } },
-            { task: 'maintenance.cleanup', identifier: 'cleanup', match: '17 * * * *', options: { backfillPeriod: 0, maxAttempts: 1, jobKey: 'cron_cleanup', jobKeyMode: 'replace' } },
+            {
+              task: 'maintenance.reconcile_due',
+              identifier: 'reconcile_due',
+              match: '* * * * *',
+              options: {
+                backfillPeriod: 0,
+                maxAttempts: 1,
+                jobKey: 'cron_reconcile_due',
+                jobKeyMode: 'replace',
+              },
+            },
+            {
+              task: 'maintenance.expire_uploads',
+              identifier: 'expire_uploads',
+              match: '*/10 * * * *',
+              options: {
+                backfillPeriod: 0,
+                maxAttempts: 1,
+                jobKey: 'cron_expire_uploads',
+                jobKeyMode: 'replace',
+              },
+            },
+            {
+              task: 'maintenance.cleanup',
+              identifier: 'cleanup',
+              match: '17 * * * *',
+              options: {
+                backfillPeriod: 0,
+                maxAttempts: 1,
+                jobKey: 'cron_cleanup',
+                jobKeyMode: 'replace',
+              },
+            },
           ]),
         }
       : {}),
   });
   runners.push(runner);
-  log.info({ pool, concurrency: pool === 'media' ? config.worker.mediaConcurrency : config.worker.generalConcurrency, tasks: tasksForPool(pool) }, 'pool started');
+  log.info(
+    {
+      pool,
+      concurrency:
+        pool === 'media' ? config.worker.mediaConcurrency : config.worker.generalConcurrency,
+      tasks: tasksForPool(pool),
+    },
+    'pool started',
+  );
 }
 
 let shuttingDown = false;
@@ -148,7 +231,10 @@ let healthServer: Server | null = null;
  * withdrawn while shutting down.
  */
 async function handleProbe(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const json = (status: number, body: unknown) => res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }).end(JSON.stringify(body));
+  const json = (status: number, body: unknown) =>
+    res
+      .writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+      .end(JSON.stringify(body));
   try {
     if (req.method !== 'GET' && req.method !== 'HEAD') return void json(405, { ok: false });
     if (req.url === '/healthz') return void json(200, { ok: true });
@@ -164,11 +250,22 @@ async function handleProbe(req: IncomingMessage, res: ServerResponse): Promise<v
 if (config.worker.healthPort > 0) {
   healthServer = createServer((req, res) => void handleProbe(req, res));
   healthServer.listen(config.worker.healthPort, config.worker.healthHost, () =>
-    log.info({ host: config.worker.healthHost, port: config.worker.healthPort }, 'health endpoint listening'),
+    log.info(
+      { host: config.worker.healthHost, port: config.worker.healthPort },
+      'health endpoint listening',
+    ),
   );
 }
 
-log.info({ env: config.env, demoMode: config.demoMode, pools: config.worker.pools, killSwitch: config.ops.publishKillSwitch }, 'relay worker running');
+log.info(
+  {
+    env: config.env,
+    demoMode: config.demoMode,
+    pools: config.worker.pools,
+    killSwitch: config.ops.publishKillSwitch,
+  },
+  'relay worker running',
+);
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;

@@ -95,9 +95,19 @@ export async function scheduleDestination(
     authorize(member, 'content.schedule', refs.pageId);
     return withIdempotency(
       tx,
-      { workspaceId, operation: 'post_destination.schedule', key: meta.idempotencyKey, actorUserId: user.userId, payload: { postDestinationId, ...input } },
+      {
+        workspaceId,
+        operation: 'post_destination.schedule',
+        key: meta.idempotencyKey,
+        actorUserId: user.userId,
+        payload: { postDestinationId, ...input },
+      },
       async () => {
-        const result = await scheduleLocked(ctx, tx, member, { refs: { ...refs, currentRevisionId: refs.currentRevisionId! }, input, meta });
+        const result = await scheduleLocked(ctx, tx, member, {
+          refs: { ...refs, currentRevisionId: refs.currentRevisionId! },
+          input,
+          meta,
+        });
         return { status: 200, body: result };
       },
     );
@@ -109,7 +119,13 @@ async function scheduleLocked(
   tx: Tx,
   member: Member,
   args: {
-    refs: { id: string; postId: string; pageId: string; socialAccountId: string; currentRevisionId: string };
+    refs: {
+      id: string;
+      postId: string;
+      pageId: string;
+      socialAccountId: string;
+      currentRevisionId: string;
+    };
     input: ReturnType<typeof scheduleSchema.parse>;
     meta: RequestMeta;
   },
@@ -117,18 +133,39 @@ async function scheduleLocked(
   const { refs, input, meta } = args;
   const workspaceId = member.workspaceId;
   const now = ctx.clock.now();
-  const { account, page, destination } = await lockForScheduling(tx, { socialAccountId: refs.socialAccountId, pageId: refs.pageId, postDestinationId: refs.id });
-  const workspace = await tx.selectFrom('workspaces').select(['pauseGeneration']).where('id', '=', workspaceId).forShare().executeTakeFirstOrThrow();
+  const { account, page, destination } = await lockForScheduling(tx, {
+    socialAccountId: refs.socialAccountId,
+    pageId: refs.pageId,
+    postDestinationId: refs.id,
+  });
+  const workspace = await tx
+    .selectFrom('workspaces')
+    .select(['pauseGeneration'])
+    .where('id', '=', workspaceId)
+    .forShare()
+    .executeTakeFirstOrThrow();
 
   if (destination.version !== input.expectedVersion) {
-    throw new AppError('version_conflict', 'This destination changed since you loaded it. Reload and try again.');
+    throw new AppError(
+      'version_conflict',
+      'This destination changed since you loaded it. Reload and try again.',
+    );
   }
   const state = destination.state as DestinationState;
   const rescheduling = ['scheduled', 'preparing', 'blocked', 'failed'].includes(state);
   if (!rescheduling && state !== 'approved') {
-    throw new AppError('approval_required', state === 'needs_review' ? 'Approve this destination before scheduling it.' : `A ${state} destination cannot be scheduled.`);
+    throw new AppError(
+      'approval_required',
+      state === 'needs_review'
+        ? 'Approve this destination before scheduling it.'
+        : `A ${state} destination cannot be scheduled.`,
+    );
   }
-  if (account.status !== 'active') throw new AppError('connection_unhealthy', `${account.displayName} needs to be reconnected before scheduling.`);
+  if (account.status !== 'active')
+    throw new AppError(
+      'connection_unhealthy',
+      `${account.displayName} needs to be reconnected before scheduling.`,
+    );
 
   // The approval must still match what would be published right now.
   const approval = await tx
@@ -138,20 +175,31 @@ async function scheduleLocked(
     .where('decision', '=', 'approved')
     .where('invalidatedAt', 'is', null)
     .executeTakeFirst();
-  if (!approval) throw new AppError('approval_required', 'This destination needs an approval first.');
+  if (!approval)
+    throw new AppError('approval_required', 'This destination needs an approval first.');
   const bundle = await loadRevisionBundle(tx, refs.currentRevisionId);
-  const target = (await loadDestinationTargets(tx, refs.postId)).find((t) => t.postDestinationId === refs.id)!;
+  const target = (await loadDestinationTargets(tx, refs.postId)).find(
+    (t) => t.postDestinationId === refs.id,
+  )!;
   const built = await buildDestinationIntent(tx, ctx, { workspaceId, bundle, target, at: now });
   if (built.hash !== approval.intentHash || approval.revisionId !== refs.currentRevisionId) {
-    throw new AppError('approval_stale', 'The content, media rights or target changed since approval. Request a new approval.');
+    throw new AppError(
+      'approval_stale',
+      'The content, media rights or target changed since approval. Request a new approval.',
+    );
   }
   if (!built.mediaReady) throw new AppError('media_not_ready', 'Media is not ready yet.');
   const scheduleBlocker = built.issues.find((i) => i.blocks === 'schedule');
   if (scheduleBlocker) {
-    throw new AppError('capability_unavailable', scheduleBlocker.message, { details: { reasonCode: scheduleBlocker.code, fallback: scheduleBlocker.fallback ?? null } });
+    throw new AppError('capability_unavailable', scheduleBlocker.message, {
+      details: { reasonCode: scheduleBlocker.code, fallback: scheduleBlocker.fallback ?? null },
+    });
   }
   const submitBlocker = built.issues.find((i) => i.blocks === 'submit');
-  if (submitBlocker) throw new AppError('destination_validation_failed', submitBlocker.message, { details: { issues: built.issues } });
+  if (submitBlocker)
+    throw new AppError('destination_validation_failed', submitBlocker.message, {
+      details: { issues: built.issues },
+    });
 
   // Resolve the planned instant in the page's zone.
   const { rules, revision: policyRevision } = await loadRules(tx, refs.pageId);
@@ -168,27 +216,58 @@ async function scheduleLocked(
     weekStart: page.weekStart as WeekStart,
     rules: input.mode === 'asap' ? { ...rules, leadMinutes: 0 } : rules,
     now,
-    existing: await pacingContext(tx, { socialAccountId: account.id, postDestinationId: refs.id, around: plannedAt }),
+    existing: await pacingContext(tx, {
+      socialAccountId: account.id,
+      postDestinationId: refs.id,
+      around: plannedAt,
+    }),
     excludePostDestinationId: refs.id,
     campaign: campaign ? { startsOn: campaign.startsOn, endsOn: campaign.endsOn } : null,
     rightsExpireAt: built.rights.expiresAt,
-    approvalWindow: approval.windowStartsAt || approval.windowEndsAt ? { startsAt: approval.windowStartsAt, endsAt: approval.windowEndsAt } : null,
+    approvalWindow:
+      approval.windowStartsAt || approval.windowEndsAt
+        ? { startsAt: approval.windowStartsAt, endsAt: approval.windowEndsAt }
+        : null,
     asap: input.mode === 'asap',
   });
   if (evaluation.violations.length > 0) throw violationError(evaluation.violations);
 
   // Supersede the previous intent (reschedule) and release its reservation.
   const previous = destination.activeIntentId
-    ? await tx.selectFrom('publishIntents').selectAll().where('id', '=', destination.activeIntentId).executeTakeFirst()
+    ? await tx
+        .selectFrom('publishIntents')
+        .selectAll()
+        .where('id', '=', destination.activeIntentId)
+        .executeTakeFirst()
     : null;
   if (previous) {
-    const reservation = await tx.selectFrom('slotReservations').select(['id', 'locked']).where('intentId', '=', previous.id).where('status', '=', 'active').executeTakeFirst();
-    if (reservation?.locked) throw new AppError('slot_locked', 'This slot is locked. Unlock it before moving the post.');
-    await tx.updateTable('publishIntents').set({ status: 'superseded', endedAt: now, endReason: 'rescheduled' }).where('id', '=', previous.id).where('status', '=', 'active').execute();
-    await tx.updateTable('slotReservations').set({ status: 'released', releasedAt: now, releaseReason: 'rescheduled' }).where('intentId', '=', previous.id).where('status', '=', 'active').execute();
+    const reservation = await tx
+      .selectFrom('slotReservations')
+      .select(['id', 'locked'])
+      .where('intentId', '=', previous.id)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    if (reservation?.locked)
+      throw new AppError('slot_locked', 'This slot is locked. Unlock it before moving the post.');
+    await tx
+      .updateTable('publishIntents')
+      .set({ status: 'superseded', endedAt: now, endReason: 'rescheduled' })
+      .where('id', '=', previous.id)
+      .where('status', '=', 'active')
+      .execute();
+    await tx
+      .updateTable('slotReservations')
+      .set({ status: 'released', releasedAt: now, releaseReason: 'rescheduled' })
+      .where('intentId', '=', previous.id)
+      .where('status', '=', 'active')
+      .execute();
   }
 
-  const versionRow = await tx.selectFrom('publishIntents').select(({ fn }) => fn.max('intentVersion').as('v')).where('postDestinationId', '=', refs.id).executeTakeFirst();
+  const versionRow = await tx
+    .selectFrom('publishIntents')
+    .select(({ fn }) => fn.max('intentVersion').as('v'))
+    .where('postDestinationId', '=', refs.id)
+    .executeTakeFirst();
   const intentVersion = Number(versionRow?.v ?? 0) + 1;
   const intentId = ctx.ids.next();
   await tx
@@ -200,7 +279,12 @@ async function scheduleLocked(
       revisionId: refs.currentRevisionId,
       approvalId: approval.id,
       intentVersion,
-      operationKey: publishOperationKey({ workspaceId, postDestinationId: refs.id, revisionId: refs.currentRevisionId, intentVersion }),
+      operationKey: publishOperationKey({
+        workspaceId,
+        postDestinationId: refs.id,
+        revisionId: refs.currentRevisionId,
+        intentVersion,
+      }),
       intentHash: built.hash,
       dispatchMode: input.mode,
       plannedAt,
@@ -230,7 +314,10 @@ async function scheduleLocked(
       .execute();
   } catch (error) {
     if ((error as { constraint?: string }).constraint === 'slot_reservations_exact_slot_key') {
-      throw new AppError('slot_conflict', 'Another post was just scheduled on this account at exactly that time.');
+      throw new AppError(
+        'slot_conflict',
+        'Another post was just scheduled on this account at exactly that time.',
+      );
     }
     throw error;
   }
@@ -254,7 +341,13 @@ async function scheduleLocked(
   await enqueue(
     tx,
     'publish.advance',
-    { workspaceId, postDestinationId: refs.id, intentId, intentVersion, correlationId: meta.requestId },
+    {
+      workspaceId,
+      postDestinationId: refs.id,
+      intentId,
+      intentVersion,
+      correlationId: meta.requestId,
+    },
     { runAt, jobKey: `publish:${refs.id}` },
   );
   await appendAudit(tx, ctx.ids, {
@@ -296,29 +389,66 @@ async function scheduleLocked(
 }
 
 /** Cancel the unclaimed intent and release its reservation; the approval stays valid. */
-export async function unscheduleDestination(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, postDestinationId: string, rawInput: unknown, meta: RequestMeta) {
+export async function unscheduleDestination(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  postDestinationId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = versionedActionSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     const refs = await destinationRefs(tx, postDestinationId);
     if (!refs) throw new AppError('not_found', 'Destination not found');
     authorize(member, 'content.cancel', refs.pageId);
-    const { destination } = await lockForScheduling(tx, { socialAccountId: refs.socialAccountId, pageId: refs.pageId, postDestinationId });
-    if (destination.version !== input.expectedVersion) throw new AppError('version_conflict', 'This destination changed since you loaded it. Reload and try again.');
+    const { destination } = await lockForScheduling(tx, {
+      socialAccountId: refs.socialAccountId,
+      pageId: refs.pageId,
+      postDestinationId,
+    });
+    if (destination.version !== input.expectedVersion)
+      throw new AppError(
+        'version_conflict',
+        'This destination changed since you loaded it. Reload and try again.',
+      );
     const state = destination.state as DestinationState;
     if (state === 'dispatching' || state === 'processing') {
-      throw new AppError('invalid_transition', 'Relay already claimed this post for publishing; it can no longer be canceled. Its outcome will be shown here.');
+      throw new AppError(
+        'invalid_transition',
+        'Relay already claimed this post for publishing; it can no longer be canceled. Its outcome will be shown here.',
+      );
     }
     const now = ctx.clock.now();
     if (destination.activeIntentId) {
-      await tx.updateTable('publishIntents').set({ status: 'canceled', endedAt: now, endReason: 'unscheduled' }).where('id', '=', destination.activeIntentId).where('status', '=', 'active').execute();
-      await tx.updateTable('slotReservations').set({ status: 'released', releasedAt: now, releaseReason: 'unscheduled' }).where('intentId', '=', destination.activeIntentId).where('status', '=', 'active').execute();
+      await tx
+        .updateTable('publishIntents')
+        .set({ status: 'canceled', endedAt: now, endReason: 'unscheduled' })
+        .where('id', '=', destination.activeIntentId)
+        .where('status', '=', 'active')
+        .execute();
+      await tx
+        .updateTable('slotReservations')
+        .set({ status: 'released', releasedAt: now, releaseReason: 'unscheduled' })
+        .where('intentId', '=', destination.activeIntentId)
+        .where('status', '=', 'active')
+        .execute();
     }
     const { to, version } = await transitionDestination(tx, {
       postDestinationId,
       from: state,
       trigger: 'unschedule',
       now,
-      set: { activeIntentId: null, checkpointPhase: null, checkpointReceiptId: null, checkpointProviderPostId: null, checkpointNextCheckAt: null, attemptCount: 0, leaseOwner: null, leaseExpiresAt: null },
+      set: {
+        activeIntentId: null,
+        checkpointPhase: null,
+        checkpointReceiptId: null,
+        checkpointProviderPostId: null,
+        checkpointNextCheckAt: null,
+        attemptCount: 0,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      },
     });
     await appendAudit(tx, ctx.ids, {
       workspaceId,
@@ -335,14 +465,26 @@ export async function unscheduleDestination(ctx: ServiceContext, user: Authentic
   });
 }
 
-export async function setSlotLock(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, postDestinationId: string, rawInput: unknown, meta: RequestMeta) {
+export async function setSlotLock(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  postDestinationId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = lockSlotSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     const refs = await destinationRefs(tx, postDestinationId);
     if (!refs) throw new AppError('not_found', 'Destination not found');
     authorize(member, 'content.schedule', refs.pageId);
-    const { destination } = await lockForScheduling(tx, { socialAccountId: refs.socialAccountId, pageId: refs.pageId, postDestinationId });
-    if (destination.version !== input.expectedVersion) throw new AppError('version_conflict', 'This destination changed since you loaded it.');
+    const { destination } = await lockForScheduling(tx, {
+      socialAccountId: refs.socialAccountId,
+      pageId: refs.pageId,
+      postDestinationId,
+    });
+    if (destination.version !== input.expectedVersion)
+      throw new AppError('version_conflict', 'This destination changed since you loaded it.');
     const updated = await tx
       .updateTable('slotReservations')
       .set({ locked: input.locked })
@@ -350,8 +492,13 @@ export async function setSlotLock(ctx: ServiceContext, user: AuthenticatedUser, 
       .where('status', '=', 'active')
       .returning('id')
       .executeTakeFirst();
-    if (!updated) throw new AppError('invalid_transition', 'Only scheduled posts have a slot to lock.');
-    await tx.updateTable('postDestinations').set({ version: sql`version + 1` }).where('id', '=', postDestinationId).execute();
+    if (!updated)
+      throw new AppError('invalid_transition', 'Only scheduled posts have a slot to lock.');
+    await tx
+      .updateTable('postDestinations')
+      .set({ version: sql`version + 1` })
+      .where('id', '=', postDestinationId)
+      .execute();
     await appendAudit(tx, ctx.ids, {
       workspaceId,
       actor: memberActor(member),
@@ -367,22 +514,59 @@ export async function setSlotLock(ctx: ServiceContext, user: AuthenticatedUser, 
 }
 
 /** Operator retry of a failed destination: resumes the same intent from its last checkpoint. */
-export async function retryDestination(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, postDestinationId: string, rawInput: unknown, meta: RequestMeta) {
+export async function retryDestination(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  postDestinationId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = versionedActionSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     const refs = await destinationRefs(tx, postDestinationId);
     if (!refs) throw new AppError('not_found', 'Destination not found');
     authorize(member, 'content.retry', refs.pageId);
-    const { destination } = await lockForScheduling(tx, { socialAccountId: refs.socialAccountId, pageId: refs.pageId, postDestinationId });
-    if (destination.version !== input.expectedVersion) throw new AppError('version_conflict', 'This destination changed since you loaded it.');
-    if (destination.state !== 'failed') throw new AppError('invalid_transition', 'Only failed destinations can be retried.');
+    const { destination } = await lockForScheduling(tx, {
+      socialAccountId: refs.socialAccountId,
+      pageId: refs.pageId,
+      postDestinationId,
+    });
+    if (destination.version !== input.expectedVersion)
+      throw new AppError('version_conflict', 'This destination changed since you loaded it.');
+    if (destination.state !== 'failed')
+      throw new AppError('invalid_transition', 'Only failed destinations can be retried.');
     const intent = destination.activeIntentId
-      ? await tx.selectFrom('publishIntents').select(['id', 'intentVersion', 'status']).where('id', '=', destination.activeIntentId).executeTakeFirst()
+      ? await tx
+          .selectFrom('publishIntents')
+          .select(['id', 'intentVersion', 'status'])
+          .where('id', '=', destination.activeIntentId)
+          .executeTakeFirst()
       : null;
-    if (!intent || intent.status !== 'active') throw new AppError('invalid_transition', 'This destination has no active publish intent; schedule it again.');
+    if (!intent || intent.status !== 'active')
+      throw new AppError(
+        'invalid_transition',
+        'This destination has no active publish intent; schedule it again.',
+      );
     const now = ctx.clock.now();
-    const { to, version } = await transitionDestination(tx, { postDestinationId, from: 'failed', trigger: 'retry', now });
-    await enqueue(tx, 'publish.advance', { workspaceId, postDestinationId, intentId: intent.id, intentVersion: intent.intentVersion, correlationId: meta.requestId }, { jobKey: `publish:${postDestinationId}` });
+    const { to, version } = await transitionDestination(tx, {
+      postDestinationId,
+      from: 'failed',
+      trigger: 'retry',
+      now,
+    });
+    await enqueue(
+      tx,
+      'publish.advance',
+      {
+        workspaceId,
+        postDestinationId,
+        intentId: intent.id,
+        intentVersion: intent.intentVersion,
+        correlationId: meta.requestId,
+      },
+      { jobKey: `publish:${postDestinationId}` },
+    );
     await appendAudit(tx, ctx.ids, {
       workspaceId,
       actor: memberActor(member),
@@ -399,19 +583,41 @@ export async function retryDestination(ctx: ServiceContext, user: AuthenticatedU
 }
 
 /** Slot proposals. Pure computation over committed state: nothing is reserved. */
-export async function recommendSlotsFor(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, rawInput: unknown) {
+export async function recommendSlotsFor(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  rawInput: unknown,
+) {
   const input = recommendSlotsSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     const now = ctx.clock.now();
-    const results: Array<{ postDestinationId: string; label: string; zone: string } & RecommendResult> = [];
+    const results: Array<
+      { postDestinationId: string; label: string; zone: string } & RecommendResult
+    > = [];
     for (const id of input.postDestinationIds) {
       const refs = await destinationRefs(tx, id);
       if (!refs) throw new AppError('not_found', 'Destination not found');
       authorize(member, 'content.view', refs.pageId);
-      const page = await tx.selectFrom('pages').select(['timezone', 'weekStart']).where('id', '=', refs.pageId).executeTakeFirstOrThrow();
-      const label = await tx.selectFrom('pageDestinations').select('label').innerJoin('postDestinations', 'postDestinations.pageDestinationId', 'pageDestinations.id').where('postDestinations.id', '=', id).executeTakeFirstOrThrow();
+      const page = await tx
+        .selectFrom('pages')
+        .select(['timezone', 'weekStart'])
+        .where('id', '=', refs.pageId)
+        .executeTakeFirstOrThrow();
+      const label = await tx
+        .selectFrom('pageDestinations')
+        .select('label')
+        .innerJoin('postDestinations', 'postDestinations.pageDestinationId', 'pageDestinations.id')
+        .where('postDestinations.id', '=', id)
+        .executeTakeFirstOrThrow();
       const { rules } = await loadRules(tx, refs.pageId);
-      const approval = await tx.selectFrom('approvals').select(['windowStartsAt', 'windowEndsAt']).where('postDestinationId', '=', id).where('decision', '=', 'approved').where('invalidatedAt', 'is', null).executeTakeFirst();
+      const approval = await tx
+        .selectFrom('approvals')
+        .select(['windowStartsAt', 'windowEndsAt'])
+        .where('postDestinationId', '=', id)
+        .where('decision', '=', 'approved')
+        .where('invalidatedAt', 'is', null)
+        .executeTakeFirst();
       const campaign = await campaignFor(tx, refs.postId);
       const from = input.from ? new Date(input.from) : now;
       const result = recommendSlots({
@@ -420,10 +626,16 @@ export async function recommendSlotsFor(ctx: ServiceContext, user: Authenticated
         rules,
         now,
         from,
-        existing: await pacingContext(tx, { socialAccountId: refs.socialAccountId, postDestinationId: id, around: new Date(from.getTime() + (input.horizonDays * 86_400_000) / 2) }),
+        existing: await pacingContext(tx, {
+          socialAccountId: refs.socialAccountId,
+          postDestinationId: id,
+          around: new Date(from.getTime() + (input.horizonDays * 86_400_000) / 2),
+        }),
         excludePostDestinationId: id,
         campaign: campaign ? { startsOn: campaign.startsOn, endsOn: campaign.endsOn } : null,
-        approvalWindow: approval ? { startsAt: approval.windowStartsAt, endsAt: approval.windowEndsAt } : null,
+        approvalWindow: approval
+          ? { startsAt: approval.windowStartsAt, endsAt: approval.windowEndsAt }
+          : null,
         count: input.count,
         horizonDays: input.horizonDays,
       });

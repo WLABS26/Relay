@@ -6,7 +6,8 @@
  * the same function as the HTTP layer before every dispatch.
  */
 
-export type CapabilityState = 'enabled' | 'disabled' | 'missing_scope' | 'needs_review' | 'not_supported';
+export type CapabilityState =
+  'enabled' | 'disabled' | 'missing_scope' | 'needs_review' | 'not_supported';
 
 export type CapabilityFallback = 'manual_export' | 'reconnect' | null;
 
@@ -53,10 +54,17 @@ export function resolveCapability(inputs: CapabilityInputs, now: Date): Capabili
     reasonCode: string | undefined,
     message: string,
     fallback: CapabilityFallback = null,
-  ): Capability => (reasonCode ? { state, reasonCode, message, fallback, checkedAt } : { state, message, fallback, checkedAt });
+  ): Capability =>
+    reasonCode
+      ? { state, reasonCode, message, fallback, checkedAt }
+      : { state, message, fallback, checkedAt };
 
   if (inputs.connectionMode === 'simulated' && !inputs.demoMode) {
-    return result('disabled', 'simulator_disabled', 'Simulated connections are disabled in this deployment.');
+    return result(
+      'disabled',
+      'simulator_disabled',
+      'Simulated connections are disabled in this deployment.',
+    );
   }
   if (!inputs.implemented) {
     return result(
@@ -75,41 +83,88 @@ export function resolveCapability(inputs: CapabilityInputs, now: Date): Capabili
     );
   }
   if (!inputs.deploymentEnabled) {
-    return result('disabled', 'deployment_disabled', 'An administrator has not enabled this integration.', 'manual_export');
+    return result(
+      'disabled',
+      'deployment_disabled',
+      'An administrator has not enabled this integration.',
+      'manual_export',
+    );
   }
   if (inputs.programApproval === 'pending') {
-    return result('needs_review', 'provider_review_pending', 'Waiting for platform app review.', 'manual_export');
+    return result(
+      'needs_review',
+      'provider_review_pending',
+      'Waiting for platform app review.',
+      'manual_export',
+    );
   }
   if (inputs.programApproval === 'denied') {
-    return result('disabled', 'provider_review_denied', 'The platform has not approved this use.', 'manual_export');
+    return result(
+      'disabled',
+      'provider_review_denied',
+      'The platform has not approved this use.',
+      'manual_export',
+    );
   }
   if (inputs.runtimeHealth === 'revoked') {
-    return result('disabled', 'connection_revoked', 'The account was disconnected. Reconnect it to publish.', 'reconnect');
+    return result(
+      'disabled',
+      'connection_revoked',
+      'The account was disconnected. Reconnect it to publish.',
+      'reconnect',
+    );
   }
   if (inputs.runtimeHealth === 'needs_reauth') {
     return result('disabled', 'needs_reauth', 'The account needs to be reconnected.', 'reconnect');
   }
   const missing = inputs.requiredScopes.filter((s) => !inputs.grantedScopes.includes(s));
   if (missing.length > 0) {
-    return result('missing_scope', `missing_scope:${missing.join(',')}`, 'The connection is missing a required permission. Reconnect and grant it.', 'reconnect');
+    return result(
+      'missing_scope',
+      `missing_scope:${missing.join(',')}`,
+      'The connection is missing a required permission. Reconnect and grant it.',
+      'reconnect',
+    );
   }
   if (!inputs.accountTypeSupported) {
-    return result('not_supported', 'account_type_unsupported', 'This account type cannot publish through the API.', 'manual_export');
+    return result(
+      'not_supported',
+      'account_type_unsupported',
+      'This account type cannot publish through the API.',
+      'manual_export',
+    );
   }
   if (!inputs.formatSupported) {
-    return result('not_supported', 'format_unsupported', 'This destination does not accept this format.', 'manual_export');
+    return result(
+      'not_supported',
+      'format_unsupported',
+      'This destination does not accept this format.',
+      'manual_export',
+    );
   }
   if (!inputs.visibilitySupported) {
-    return result('not_supported', 'visibility_unsupported', 'This destination does not support the chosen visibility.');
+    return result(
+      'not_supported',
+      'visibility_unsupported',
+      'This destination does not support the chosen visibility.',
+    );
   }
   if (!inputs.policyAllows) {
     return result('disabled', 'policy_denied', 'Page publishing rules do not allow this.');
   }
   if (inputs.runtimeHealth === 'degraded') {
-    return result('enabled', 'provider_degraded', 'Enabled, but the platform recently returned errors.');
+    return result(
+      'enabled',
+      'provider_degraded',
+      'Enabled, but the platform recently returned errors.',
+    );
   }
   if (inputs.runtimeHealth === 'unknown') {
-    return result('enabled', 'health_unknown', 'Enabled. Relay has not checked this connection with the platform yet.');
+    return result(
+      'enabled',
+      'health_unknown',
+      'Enabled. Relay has not checked this connection with the platform yet.',
+    );
   }
   return result('enabled', undefined, 'Enabled');
 }

@@ -66,13 +66,25 @@ export class ObjectStorage {
       requestChecksumCalculation: 'WHEN_REQUIRED' as const,
       responseChecksumValidation: 'WHEN_REQUIRED' as const,
       ...(config.accessKeyId && config.secretAccessKey
-        ? { credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey } }
+        ? {
+            credentials: {
+              accessKeyId: config.accessKeyId,
+              secretAccessKey: config.secretAccessKey,
+            },
+          }
         : {}),
     };
-    this.internal = new S3Client({ ...base, ...(config.endpoint ? { endpoint: config.endpoint } : {}) });
+    this.internal = new S3Client({
+      ...base,
+      ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+    });
     this.presigner = new S3Client({
       ...base,
-      ...(config.publicEndpoint ? { endpoint: config.publicEndpoint } : config.endpoint ? { endpoint: config.endpoint } : {}),
+      ...(config.publicEndpoint
+        ? { endpoint: config.publicEndpoint }
+        : config.endpoint
+          ? { endpoint: config.endpoint }
+          : {}),
     });
   }
 
@@ -97,14 +109,21 @@ export class ObjectStorage {
         IfNoneMatch: '*',
         ...(input.checksumSha256 ? { ChecksumSHA256: input.checksumSha256 } : {}),
       }),
-      { expiresIn: input.expiresInSeconds, signableHeaders: new Set(['content-type', 'if-none-match']) },
+      {
+        expiresIn: input.expiresInSeconds,
+        signableHeaders: new Set(['content-type', 'if-none-match']),
+      },
     );
     return { url, headers: { 'content-type': input.contentType, 'if-none-match': '*' } };
   }
 
   async createMultipart(input: { key: string; contentType: string }): Promise<string> {
     const out = await this.internal.send(
-      new CreateMultipartUploadCommand({ Bucket: this.bucket, Key: input.key, ContentType: input.contentType }),
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: input.key,
+        ContentType: input.contentType,
+      }),
     );
     if (!out.UploadId) throw new Error('storage did not return an UploadId');
     return out.UploadId;
@@ -136,10 +155,16 @@ export class ObjectStorage {
     let marker: string | undefined;
     for (;;) {
       const out = await this.internal.send(
-        new ListPartsCommand({ Bucket: this.bucket, Key: input.key, UploadId: input.uploadId, PartNumberMarker: marker }),
+        new ListPartsCommand({
+          Bucket: this.bucket,
+          Key: input.key,
+          UploadId: input.uploadId,
+          PartNumberMarker: marker,
+        }),
       );
       for (const p of out.Parts ?? []) {
-        if (p.PartNumber && p.ETag && p.Size !== undefined) parts.push({ partNumber: p.PartNumber, etag: p.ETag, size: p.Size });
+        if (p.PartNumber && p.ETag && p.Size !== undefined)
+          parts.push({ partNumber: p.PartNumber, etag: p.ETag, size: p.Size });
       }
       if (!out.IsTruncated || !out.NextPartNumberMarker) break;
       marker = out.NextPartNumberMarker;
@@ -147,21 +172,33 @@ export class ObjectStorage {
     return parts.sort((a, b) => a.partNumber - b.partNumber);
   }
 
-  async completeMultipart(input: { key: string; uploadId: string; parts: Array<{ partNumber: number; etag: string }> }): Promise<void> {
+  async completeMultipart(input: {
+    key: string;
+    uploadId: string;
+    parts: Array<{ partNumber: number; etag: string }>;
+  }): Promise<void> {
     await this.internal.send(
       new CompleteMultipartUploadCommand({
         Bucket: this.bucket,
         Key: input.key,
         UploadId: input.uploadId,
         IfNoneMatch: '*',
-        MultipartUpload: { Parts: input.parts.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })) },
+        MultipartUpload: {
+          Parts: input.parts.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+        },
       }),
     );
   }
 
   async abortMultipart(input: { key: string; uploadId: string }): Promise<void> {
     try {
-      await this.internal.send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: input.key, UploadId: input.uploadId }));
+      await this.internal.send(
+        new AbortMultipartUploadCommand({
+          Bucket: this.bucket,
+          Key: input.key,
+          UploadId: input.uploadId,
+        }),
+      );
     } catch (error) {
       if (isNotFound(error)) return; // already aborted or completed
       throw error;
@@ -171,7 +208,11 @@ export class ObjectStorage {
   async head(key: string, versionId?: string | null): Promise<HeadResult | null> {
     try {
       const out = await this.internal.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key, ...(versionId ? { VersionId: versionId } : {}) }),
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ...(versionId ? { VersionId: versionId } : {}),
+        }),
       );
       return {
         size: out.ContentLength ?? 0,
@@ -250,12 +291,20 @@ export class ObjectStorage {
         cb(null, chunk);
       },
     });
-    await pipeline(out.Body as Readable, meter, createWriteStream(input.path, { flags: 'wx', mode: 0o600 }));
+    await pipeline(
+      out.Body as Readable,
+      meter,
+      createWriteStream(input.path, { flags: 'wx', mode: 0o600 }),
+    );
     return { bytes, sha256: hash.digest('hex'), head: Buffer.concat(headChunks) };
   }
 
   /** Upload a local file (derivatives); refuses to overwrite an existing key. */
-  async uploadFile(input: { key: string; path: string; contentType: string }): Promise<{ etag: string | null; versionId: string | null; size: number }> {
+  async uploadFile(input: {
+    key: string;
+    path: string;
+    contentType: string;
+  }): Promise<{ etag: string | null; versionId: string | null; size: number }> {
     const { size } = await stat(input.path);
     const out = await this.internal.send(
       new PutObjectCommand({
@@ -271,9 +320,19 @@ export class ObjectStorage {
   }
 
   /** Small in-memory upload (fixtures, tests). */
-  async putBytes(input: { key: string; body: Buffer; contentType: string }): Promise<{ etag: string | null; versionId: string | null }> {
+  async putBytes(input: {
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }): Promise<{ etag: string | null; versionId: string | null }> {
     const out = await this.internal.send(
-      new PutObjectCommand({ Bucket: this.bucket, Key: input.key, Body: input.body, ContentType: input.contentType, IfNoneMatch: '*' }),
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: input.key,
+        Body: input.body,
+        ContentType: input.contentType,
+        IfNoneMatch: '*',
+      }),
     );
     return { etag: out.ETag ?? null, versionId: out.VersionId ?? null };
   }
@@ -285,11 +344,20 @@ export class ObjectStorage {
     let versionMarker: string | undefined;
     for (;;) {
       const out = await this.internal.send(
-        new ListObjectVersionsCommand({ Bucket: this.bucket, Prefix: key, KeyMarker: keyMarker, VersionIdMarker: versionMarker }),
+        new ListObjectVersionsCommand({
+          Bucket: this.bucket,
+          Prefix: key,
+          KeyMarker: keyMarker,
+          VersionIdMarker: versionMarker,
+        }),
       );
-      const entries = [...(out.Versions ?? []), ...(out.DeleteMarkers ?? [])].filter((v) => v.Key === key);
+      const entries = [...(out.Versions ?? []), ...(out.DeleteMarkers ?? [])].filter(
+        (v) => v.Key === key,
+      );
       for (const v of entries) {
-        await this.internal.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key, VersionId: v.VersionId }));
+        await this.internal.send(
+          new DeleteObjectCommand({ Bucket: this.bucket, Key: key, VersionId: v.VersionId }),
+        );
         deleted++;
       }
       if (!out.IsTruncated) break;
@@ -297,7 +365,9 @@ export class ObjectStorage {
       versionMarker = out.NextVersionIdMarker;
     }
     if (deleted === 0) {
-      await this.internal.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => undefined);
+      await this.internal
+        .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }))
+        .catch(() => undefined);
     }
     return deleted;
   }
@@ -310,7 +380,10 @@ export class ObjectStorage {
       await this.internal.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
     await this.internal.send(
-      new PutBucketVersioningCommand({ Bucket: this.bucket, VersioningConfiguration: { Status: 'Enabled' } }),
+      new PutBucketVersioningCommand({
+        Bucket: this.bucket,
+        VersioningConfiguration: { Status: 'Enabled' },
+      }),
     );
     await this.internal.send(
       new PutBucketCorsCommand({
@@ -320,7 +393,13 @@ export class ObjectStorage {
             {
               AllowedOrigins: corsOrigins,
               AllowedMethods: ['PUT', 'GET', 'HEAD'],
-              AllowedHeaders: ['content-type', 'content-length', 'if-none-match', 'x-amz-checksum-sha256', 'x-amz-sdk-checksum-algorithm'],
+              AllowedHeaders: [
+                'content-type',
+                'content-length',
+                'if-none-match',
+                'x-amz-checksum-sha256',
+                'x-amz-sdk-checksum-algorithm',
+              ],
               ExposeHeaders: ['ETag'],
               MaxAgeSeconds: 600,
             },
@@ -337,7 +416,10 @@ export class ObjectStorage {
 
 export function isNotFound(error: unknown): boolean {
   if (error instanceof S3ServiceException) {
-    return error.$metadata.httpStatusCode === 404 || ['NotFound', 'NoSuchKey', 'NoSuchUpload'].includes(error.name);
+    return (
+      error.$metadata.httpStatusCode === 404 ||
+      ['NotFound', 'NoSuchKey', 'NoSuchUpload'].includes(error.name)
+    );
   }
   return false;
 }

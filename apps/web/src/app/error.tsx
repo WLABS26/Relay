@@ -2,7 +2,13 @@
 
 import { Banner, Button } from '@relay/ui';
 
-export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function ErrorPage({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
   return (
     <main id="main" className="app-content">
       <Banner tone="danger" title="Something went wrong">

@@ -9,10 +9,19 @@ import {
   type SimulatorRemotePost,
   type SimulatorStore,
 } from './simulator';
-import { ProviderTimeoutError, type ConnectedAccount, type PublishCheckpoint, type PublishIntent, type SimulatorProfile, type StepResult } from './types';
+import {
+  ProviderTimeoutError,
+  type ConnectedAccount,
+  type PublishCheckpoint,
+  type PublishIntent,
+  type SimulatorProfile,
+  type StepResult,
+} from './types';
 
 /** In-memory stand-in for the provider_sim schema (the real store is covered by integration tests). */
-function memoryStore(clock: ManualClock): SimulatorStore & { posts: Map<string, SimulatorRemotePost> } {
+function memoryStore(
+  clock: ManualClock,
+): SimulatorStore & { posts: Map<string, SimulatorRemotePost> } {
   const posts = new Map<string, SimulatorRemotePost>();
   const counters = new Map<string, number>();
   return {
@@ -21,7 +30,8 @@ function memoryStore(clock: ManualClock): SimulatorStore & { posts: Map<string, 
       return posts.get(op) ?? null;
     },
     async upsertStaged(post) {
-      if (!posts.has(post.operationId)) posts.set(post.operationId, { ...post, createdAt: clock.now(), publishedAt: null });
+      if (!posts.has(post.operationId))
+        posts.set(post.operationId, { ...post, createdAt: clock.now(), publishedAt: null });
       return posts.get(post.operationId)!;
     },
     async update(op, patch) {
@@ -59,8 +69,16 @@ const intent: PublishIntent = {
   payload: {
     workspaceId: 'w1',
     postId: 'p1',
-    destination: { pageDestinationId: 'd1', socialAccountId: 'a1', provider: 'youtube', connectionMode: 'simulated', providerAccountId: 'sim-channel-1' },
-    media: [{ position: 0, assetId: 'm1', assetVersion: 1, kind: 'video', sha256: 'ab'.repeat(32) }],
+    destination: {
+      pageDestinationId: 'd1',
+      socialAccountId: 'a1',
+      provider: 'youtube',
+      connectionMode: 'simulated',
+      providerAccountId: 'sim-channel-1',
+    },
+    media: [
+      { position: 0, assetId: 'm1', assetVersion: 1, kind: 'video', sha256: 'ab'.repeat(32) },
+    ],
     caption: 'Hello',
     title: 'Title',
     visibility: 'public',
@@ -68,7 +86,20 @@ const intent: PublishIntent = {
     declarations: DEFAULT_DECLARATIONS,
     rights: [],
   },
-  media: [{ position: 0, assetId: 'm1', assetVersion: 1, kind: 'video', mime: 'video/mp4', sizeBytes: 1_000_000, width: 1080, height: 1920, durationMs: 8000, sha256: 'ab'.repeat(32) }],
+  media: [
+    {
+      position: 0,
+      assetId: 'm1',
+      assetVersion: 1,
+      kind: 'video',
+      mime: 'video/mp4',
+      sizeBytes: 1_000_000,
+      width: 1080,
+      height: 1920,
+      durationMs: 8000,
+      sha256: 'ab'.repeat(32),
+    },
+  ],
 };
 
 /** Drive the adapter like the worker would, recording each outcome kind. */
@@ -82,9 +113,19 @@ async function drive(profile: SimulatorProfile, maxSteps = 20) {
   for (let i = 0; i < maxSteps; i++) {
     let result: StepResult;
     try {
-      result = await adapter.advance({ account: account(profile), intent, checkpoint, operationId: `op${i}`, signal: new AbortController().signal });
+      result = await adapter.advance({
+        account: account(profile),
+        intent,
+        checkpoint,
+        operationId: `op${i}`,
+        signal: new AbortController().signal,
+      });
     } catch (error) {
-      steps.push(error instanceof ProviderTimeoutError ? `${checkpoint.phase}:timeout` : `${checkpoint.phase}:error`);
+      steps.push(
+        error instanceof ProviderTimeoutError
+          ? `${checkpoint.phase}:timeout`
+          : `${checkpoint.phase}:error`,
+      );
       break;
     }
     steps.push(`${checkpoint.phase}:${result.kind}`);
@@ -100,9 +141,21 @@ async function drive(profile: SimulatorProfile, maxSteps = 20) {
 describe('simulator publishing adapter', () => {
   it('reliable: prepares privately, dispatches once and confirms with the intended visibility', async () => {
     const { steps, last, store } = await drive('reliable');
-    expect(steps).toEqual(['prepare:continue', 'transfer:continue', 'wait_processing:continue', 'dispatch:continue', 'confirm:confirmed']);
-    expect(last).toMatchObject({ kind: 'confirmed', visibility: 'public', providerPostId: simulatedExternalId('youtube', intent.operationKey) });
-    expect(last?.kind === 'confirmed' && new URL(last.permalink!).host).toBe(SIMULATOR_PERMALINK_HOST); // never a real platform URL
+    expect(steps).toEqual([
+      'prepare:continue',
+      'transfer:continue',
+      'wait_processing:continue',
+      'dispatch:continue',
+      'confirm:confirmed',
+    ]);
+    expect(last).toMatchObject({
+      kind: 'confirmed',
+      visibility: 'public',
+      providerPostId: simulatedExternalId('youtube', intent.operationKey),
+    });
+    expect(last?.kind === 'confirmed' && new URL(last.permalink!).host).toBe(
+      SIMULATOR_PERMALINK_HOST,
+    ); // never a real platform URL
     expect(store.posts.size).toBe(1);
   });
 
@@ -131,27 +184,48 @@ describe('simulator publishing adapter', () => {
     const { steps, store, adapter } = await drive('lost_response');
     expect(steps.at(-1)).toBe('dispatch:timeout');
     expect([...store.posts.values()][0]!.status).toBe('published');
-    const r = await adapter.reconcile({ account: account('lost_response'), intent, checkpoint: { phase: 'dispatch' }, operationId: 'rec' });
+    const r = await adapter.reconcile({
+      account: account('lost_response'),
+      intent,
+      checkpoint: { phase: 'dispatch' },
+      operationId: 'rec',
+    });
     expect(r).toMatchObject({ kind: 'published', visibility: 'public' });
     expect(store.posts.size).toBe(1);
   });
 
   it('ambiguous: reconciliation cannot prove the outcome, so an operator must decide', async () => {
     const { adapter } = await drive('ambiguous');
-    const r = await adapter.reconcile({ account: account('ambiguous'), intent, checkpoint: { phase: 'dispatch' }, operationId: 'rec' });
+    const r = await adapter.reconcile({
+      account: account('ambiguous'),
+      intent,
+      checkpoint: { phase: 'dispatch' },
+      operationId: 'rec',
+    });
     expect(r.kind).toBe('indeterminate');
   });
 
   it('proves "not sent" only by an idempotent lookup that finds nothing', async () => {
     const clock = new ManualClock('2026-11-09T10:00:00Z');
-    const adapter = createSimulatorPublishingAdapter('youtube', { store: memoryStore(clock), clock });
-    const r = await adapter.reconcile({ account: account('reliable'), intent, checkpoint: { phase: 'prepare' }, operationId: 'rec' });
+    const adapter = createSimulatorPublishingAdapter('youtube', {
+      store: memoryStore(clock),
+      clock,
+    });
+    const r = await adapter.reconcile({
+      account: account('reliable'),
+      intent,
+      checkpoint: { phase: 'prepare' },
+      operationId: 'rec',
+    });
     expect(r).toEqual({ kind: 'not_found', proof: 'idempotent_lookup' });
   });
 
   it('marks which phases have side effects and which may run before the planned time', () => {
     const clock = new ManualClock('2026-11-09T10:00:00Z');
-    const adapter = createSimulatorPublishingAdapter('youtube', { store: memoryStore(clock), clock });
+    const adapter = createSimulatorPublishingAdapter('youtube', {
+      store: memoryStore(clock),
+      clock,
+    });
     expect(adapter.isSideEffecting('dispatch')).toBe(true);
     expect(adapter.isSideEffecting('confirm')).toBe(false);
     expect(adapter.mayRunBeforePlannedTime('prepare')).toBe(true);
@@ -162,8 +236,18 @@ describe('simulator publishing adapter', () => {
 
 describe('simulator metrics adapter', () => {
   const metrics = createSimulatorMetricsAdapter('youtube');
-  const publication = { externalId: 'sim_youtube_abc', publishedAt: '2026-11-09T10:00:00Z', format: 'video' as const };
-  const read = (now: string) => metrics.fetchPostMetrics({ account: account('reliable'), publication, ageBucket: null, now: new Date(now) });
+  const publication = {
+    externalId: 'sim_youtube_abc',
+    publishedAt: '2026-11-09T10:00:00Z',
+    format: 'video' as const,
+  };
+  const read = (now: string) =>
+    metrics.fetchPostMetrics({
+      account: account('reliable'),
+      publication,
+      ageBucket: null,
+      now: new Date(now),
+    });
 
   it('is deterministic for the same publication and age, and grows with age', async () => {
     expect(await read('2026-11-10T10:00:00Z')).toEqual(await read('2026-11-10T10:00:00Z'));
@@ -174,8 +258,14 @@ describe('simulator metrics adapter', () => {
 
   it('labels unavailable metrics instead of reporting zero', async () => {
     const early = await read('2026-11-09T11:00:00Z');
-    expect(early.find((m) => m.metricKey === 'watch_time_seconds')).toMatchObject({ value: null, availability: 'not_yet_reported' });
-    expect(early.find((m) => m.metricKey === 'saves')).toMatchObject({ value: null, availability: 'not_supported' });
+    expect(early.find((m) => m.metricKey === 'watch_time_seconds')).toMatchObject({
+      value: null,
+      availability: 'not_yet_reported',
+    });
+    expect(early.find((m) => m.metricKey === 'saves')).toMatchObject({
+      value: null,
+      availability: 'not_supported',
+    });
     expect(metrics.sourcePolicy).toBe('simulator:synthetic');
   });
 });

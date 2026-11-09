@@ -10,11 +10,37 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SKIP_DIRS = new Set(['node_modules', '.next', '.git', 'dist', 'test-results', 'playwright-report', 'fixtures']);
-const EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.js', '.mjs', '.cjs', '.css', '.json', '.md', '.sql', '.yaml', '.yml', '.sh', '.svg', '.html', '.example']);
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.next',
+  '.git',
+  'dist',
+  'test-results',
+  'playwright-report',
+  'fixtures',
+]);
+const EXTENSIONS = new Set([
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.css',
+  '.json',
+  '.md',
+  '.sql',
+  '.yaml',
+  '.yml',
+  '.sh',
+  '.svg',
+  '.html',
+  '.example',
+]);
 // Bidi controls, zero-width/invisible formatting characters, BOM, and C0/C1 controls except \t \n \r.
-// eslint-disable-next-line no-control-regex -- matching control characters is the point
-const FORBIDDEN = /[\u202a-\u202e\u2066-\u2069\u200b-\u200f\u2060-\u2064\ufeff\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu;
+const FORBIDDEN =
+  // eslint-disable-next-line no-control-regex -- matching control characters is the point
+  /[\u202a-\u202e\u2066-\u2069\u200b-\u200f\u2060-\u2064\ufeff\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu;
 
 function* files(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -32,7 +58,9 @@ for (const file of files(root)) {
   lines.forEach((line, i) => {
     for (const match of line.matchAll(FORBIDDEN)) {
       const code = match[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
-      console.error(`${path.relative(root, file)}:${i + 1}:${match.index + 1}  forbidden invisible character U+${code}`);
+      console.error(
+        `${path.relative(root, file)}:${i + 1}:${match.index + 1}  forbidden invisible character U+${code}`,
+      );
       problems++;
     }
   });

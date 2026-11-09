@@ -1,5 +1,9 @@
 import type { Clock, ConnectionMode, DestinationProviderId } from '@relay/domain';
-import { createSimulatorMetricsAdapter, createSimulatorPublishingAdapter, type SimulatorStore } from './simulator';
+import {
+  createSimulatorMetricsAdapter,
+  createSimulatorPublishingAdapter,
+  type SimulatorStore,
+} from './simulator';
 import type { MetricsAdapter, PublishingAdapter } from './types';
 
 /**
@@ -18,7 +22,9 @@ export interface RegistryDeps {
   clock: Clock;
   simulatorStore?: SimulatorStore;
   /** Real adapters, keyed by provider (M3+). */
-  live?: Partial<Record<DestinationProviderId, { publishing?: PublishingAdapter; metrics?: MetricsAdapter }>>;
+  live?: Partial<
+    Record<DestinationProviderId, { publishing?: PublishingAdapter; metrics?: MetricsAdapter }>
+  >;
   simulatorPollIntervalMs?: number;
   simulatorRateLimitSeconds?: number;
 }

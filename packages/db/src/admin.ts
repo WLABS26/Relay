@@ -24,7 +24,8 @@ export async function recreateDatabase(options: {
   database: string;
   logger?: MigrateLogger;
 }): Promise<void> {
-  if (!SAFE_DB_NAME.test(options.database)) throw new Error(`Refusing unsafe database name "${options.database}"`);
+  if (!SAFE_DB_NAME.test(options.database))
+    throw new Error(`Refusing unsafe database name "${options.database}"`);
   const admin = new pg.Client({ connectionString: withDatabase(options.migratorUrl, 'postgres') });
   await admin.connect();
   try {
@@ -35,7 +36,10 @@ export async function recreateDatabase(options: {
   } finally {
     await admin.end();
   }
-  await migrate({ connectionString: withDatabase(options.migratorUrl, options.database), logger: options.logger });
+  await migrate({
+    connectionString: withDatabase(options.migratorUrl, options.database),
+    logger: options.logger,
+  });
 }
 
 export { withDatabase };

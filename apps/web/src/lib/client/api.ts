@@ -21,15 +21,26 @@ export class ApiError extends Error {
 }
 
 function csrfToken(): string {
-  const match = document.cookie.split('; ').find((c) => c.startsWith('relay_csrf=') || c.startsWith('__Host-relay_csrf='));
+  const match = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith('relay_csrf=') || c.startsWith('__Host-relay_csrf='));
   return match ? decodeURIComponent(match.slice(match.indexOf('=') + 1)) : '';
 }
 
 /** Map a non-JSON (gateway or proxy) response onto the stable error codes. */
 function gatewayEnvelope(status: number): Partial<ErrorEnvelope> {
-  if (status === 413) return { code: 'payload_too_large', message: 'That request was too large for the server to accept.' };
-  if (status === 429) return { code: 'rate_limited', message: 'Too many requests. Wait a moment and try again.' };
-  if (status >= 500) return { code: 'service_unavailable', message: `Relay is temporarily unavailable (HTTP ${status}). Try again shortly.` };
+  if (status === 413)
+    return {
+      code: 'payload_too_large',
+      message: 'That request was too large for the server to accept.',
+    };
+  if (status === 429)
+    return { code: 'rate_limited', message: 'Too many requests. Wait a moment and try again.' };
+  if (status >= 500)
+    return {
+      code: 'service_unavailable',
+      message: `Relay is temporarily unavailable (HTTP ${status}). Try again shortly.`,
+    };
   return { code: 'internal_error', message: 'The server sent a response Relay could not read.' };
 }
 
@@ -86,7 +97,10 @@ export async function poll<T>(
 }
 
 export function errorMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.requestId && error.status >= 500 ? `${error.message} (request ${error.requestId})` : error.message;
+  if (error instanceof ApiError)
+    return error.requestId && error.status >= 500
+      ? `${error.message} (request ${error.requestId})`
+      : error.message;
   if (error instanceof Error) return error.message;
   return 'Something went wrong.';
 }

@@ -1,5 +1,12 @@
 import { withTenant, type Tx } from '@relay/db';
-import { AppError, can, isPageScoped, roleSeesAllPages, type Action, type Role } from '@relay/domain';
+import {
+  AppError,
+  can,
+  isPageScoped,
+  roleSeesAllPages,
+  type Action,
+  type Role,
+} from '@relay/domain';
 import type { AuditActor } from './audit';
 import type { ServiceContext } from './context';
 
@@ -43,7 +50,9 @@ export function authorize(member: Member, action: Action, pageId?: string | null
     if (!canAccessPage(member, pageId)) throw new AppError('not_found', 'Page not found');
   }
   if (!can(member.role, action)) {
-    throw new AppError('forbidden', `Your role (${member.role}) cannot do this.`, { details: { action } });
+    throw new AppError('forbidden', `Your role (${member.role}) cannot do this.`, {
+      details: { action },
+    });
   }
 }
 
@@ -57,7 +66,11 @@ export function memberActor(member: Member): AuditActor {
   return { type: 'user', userId: member.userId, label: member.displayName };
 }
 
-export async function loadMember(tx: Tx, workspaceId: string, user: AuthenticatedUser): Promise<Member> {
+export async function loadMember(
+  tx: Tx,
+  workspaceId: string,
+  user: AuthenticatedUser,
+): Promise<Member> {
   const row = await tx
     .selectFrom('workspaceMemberships as m')
     .innerJoin('workspaces as w', 'w.id', 'm.workspaceId')
@@ -113,7 +126,12 @@ export async function inWorkspace<T>(
 /** Load a page the member can access, or not_found. */
 export async function requirePage(tx: Tx, member: Member, pageId: string) {
   if (!canAccessPage(member, pageId)) throw new AppError('not_found', 'Page not found');
-  const page = await tx.selectFrom('pages').selectAll().where('id', '=', pageId).where('archivedAt', 'is', null).executeTakeFirst();
+  const page = await tx
+    .selectFrom('pages')
+    .selectAll()
+    .where('id', '=', pageId)
+    .where('archivedAt', 'is', null)
+    .executeTakeFirst();
   if (!page) throw new AppError('not_found', 'Page not found');
   return page;
 }

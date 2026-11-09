@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { REQUIRED_SCHEMA_VERSION } from './schema-version';
 
 const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
-const migrations = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
+const migrations = readdirSync(migrationsDir)
+  .filter((f) => f.endsWith('.sql'))
+  .sort();
 
 describe('migrations', () => {
   it('are numbered 0001… without gaps or duplicates', () => {

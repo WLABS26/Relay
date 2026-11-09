@@ -10,52 +10,93 @@ import type { TaskPayload } from './tasks';
  * provider values update in place with a revision counter; repeated cumulative snapshots are
  * never summed. Unavailable metrics are stored with their availability code, not as zero.
  */
-export async function refreshMetrics(ctx: ServiceContext, payload: TaskPayload<'metrics.refresh'>): Promise<string> {
+export async function refreshMetrics(
+  ctx: ServiceContext,
+  payload: TaskPayload<'metrics.refresh'>,
+): Promise<string> {
   const { workspaceId, externalPublicationId, ageBucket } = payload;
   const loaded = await withTenant(ctx.db, { workspaceId }, async (tx) => {
-    const pub = await tx.selectFrom('externalPublications').selectAll().where('id', '=', externalPublicationId).executeTakeFirst();
+    const pub = await tx
+      .selectFrom('externalPublications')
+      .selectAll()
+      .where('id', '=', externalPublicationId)
+      .executeTakeFirst();
     if (!pub || pub.status !== 'live') return null;
-    const account = await tx.selectFrom('socialAccounts').selectAll().where('id', '=', pub.socialAccountId).executeTakeFirstOrThrow();
+    const account = await tx
+      .selectFrom('socialAccounts')
+      .selectAll()
+      .where('id', '=', pub.socialAccountId)
+      .executeTakeFirstOrThrow();
     const runId = ctx.ids.next();
     await tx
       .insertInto('metricSyncRuns')
-      .values({ id: runId, workspaceId, externalPublicationId, ageBucket, status: 'running', provenance: account.connectionMode === 'simulated' ? 'simulator' : 'provider_api' })
+      .values({
+        id: runId,
+        workspaceId,
+        externalPublicationId,
+        ageBucket,
+        status: 'running',
+        provenance: account.connectionMode === 'simulated' ? 'simulator' : 'provider_api',
+      })
       .execute();
     return { pub, account, runId };
   });
   if (!loaded) return 'skipped';
   const { pub, account, runId } = loaded;
-  const adapter = ctx.registry.metrics(pub.provider as 'youtube', pub.connectionMode as 'simulated');
+  const adapter = ctx.registry.metrics(
+    pub.provider as 'youtube',
+    pub.connectionMode as 'simulated',
+  );
   const now = ctx.clock.now();
   if (!adapter) {
     await withTenant(ctx.db, { workspaceId }, (tx) =>
-      tx.updateTable('metricSyncRuns').set({ status: 'failed', errorCode: 'adapter_unavailable', finishedAt: now }).where('id', '=', runId).execute(),
+      tx
+        .updateTable('metricSyncRuns')
+        .set({ status: 'failed', errorCode: 'adapter_unavailable', finishedAt: now })
+        .where('id', '=', runId)
+        .execute(),
     );
     return 'no_adapter';
   }
   // Snapshot the reading at the bucket's nominal age when catching up late.
   const bucketHours = AGE_BUCKETS.find((b) => b.key === ageBucket)?.hours;
-  const at = bucketHours ? new Date(Math.min(now.getTime(), pub.publishedAt.getTime() + bucketHours * 3600_000)) : now;
+  const at = bucketHours
+    ? new Date(Math.min(now.getTime(), pub.publishedAt.getTime() + bucketHours * 3600_000))
+    : now;
   let readings;
   try {
     readings = await adapter.fetchPostMetrics({
       account: toConnectedAccount(account),
-      publication: { externalId: pub.externalId, publishedAt: pub.publishedAt.toISOString(), format: pub.format as 'video' },
+      publication: {
+        externalId: pub.externalId,
+        publishedAt: pub.publishedAt.toISOString(),
+        format: pub.format as 'video',
+      },
       ageBucket,
       now: at,
     });
   } catch (error) {
     await withTenant(ctx.db, { workspaceId }, (tx) =>
-      tx.updateTable('metricSyncRuns').set({ status: 'failed', errorCode: 'fetch_failed', finishedAt: ctx.clock.now() }).where('id', '=', runId).execute(),
+      tx
+        .updateTable('metricSyncRuns')
+        .set({ status: 'failed', errorCode: 'fetch_failed', finishedAt: ctx.clock.now() })
+        .where('id', '=', runId)
+        .execute(),
     );
     throw error;
   }
   const definitionProvider = pub.connectionMode === 'simulated' ? 'simulator' : pub.provider;
   await withTenant(ctx.db, { workspaceId }, async (tx) => {
-    const definitions = await tx.selectFrom('metricDefinitions').select(['id', 'metricKey', 'definitionVersion']).where('provider', '=', definitionProvider).execute();
+    const definitions = await tx
+      .selectFrom('metricDefinitions')
+      .select(['id', 'metricKey', 'definitionVersion'])
+      .where('provider', '=', definitionProvider)
+      .execute();
     const key = observationKey({ ageBucket });
     for (const r of readings) {
-      const def = definitions.find((d) => d.metricKey === r.metricKey && d.definitionVersion === r.definitionVersion);
+      const def = definitions.find(
+        (d) => d.metricKey === r.metricKey && d.definitionVersion === r.definitionVersion,
+      );
       if (!def) continue; // unknown definitions are never stored as if comparable
       await sql`
         INSERT INTO metric_observations (id, workspace_id, external_publication_id, metric_definition_id, observation_key, age_bucket,
@@ -74,7 +115,11 @@ export async function refreshMetrics(ctx: ServiceContext, payload: TaskPayload<'
             WHEN metric_observations.value IS DISTINCT FROM EXCLUDED.value OR metric_observations.availability <> EXCLUDED.availability THEN now()
             ELSE metric_observations.revised_at END`.execute(tx);
     }
-    await tx.updateTable('metricSyncRuns').set({ status: 'succeeded', finishedAt: ctx.clock.now() }).where('id', '=', runId).execute();
+    await tx
+      .updateTable('metricSyncRuns')
+      .set({ status: 'succeeded', finishedAt: ctx.clock.now() })
+      .where('id', '=', runId)
+      .execute();
   });
   return 'ok';
 }

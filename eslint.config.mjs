@@ -37,16 +37,27 @@ export default tseslint.config(
     rules: {
       eqeqeq: ['error', 'smart'],
       'no-implicit-coercion': ['error', { allow: ['!!'] }],
-      'no-irregular-whitespace': ['error', { skipStrings: false, skipComments: false, skipTemplates: false, skipRegExps: false }],
+      'no-irregular-whitespace': [
+        'error',
+        { skipStrings: false, skipComments: false, skipTemplates: false, skipRegExps: false },
+      ],
       'prefer-const': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/no-unused-vars': [
         'error',
-        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true },
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrors: 'none',
+          ignoreRestSiblings: true,
+        },
       ],
       // Async correctness: every promise is awaited, returned or explicitly voided.
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: { attributes: false } }],
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        { checksVoidReturn: { attributes: false } },
+      ],
       '@typescript-eslint/await-thenable': 'error',
     },
   },
@@ -63,7 +74,10 @@ export default tseslint.config(
   {
     files: ['apps/web/**/*.{ts,tsx}'],
     plugins: { '@next/next': nextPlugin },
-    rules: { ...nextPlugin.configs.recommended.rules, ...nextPlugin.configs['core-web-vitals'].rules },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs['core-web-vitals'].rules,
+    },
     settings: { next: { rootDir: 'apps/web' } },
   },
 );

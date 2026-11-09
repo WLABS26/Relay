@@ -4,7 +4,8 @@ import { databaseNameOf, recreateDatabase } from '../admin';
 /** Drop and recreate the local database from migrations (development only). */
 loadDotEnv();
 const url = process.env.DATABASE_URL_MIGRATOR;
-const env = process.env.RELAY_ENV ?? (process.env.NODE_ENV === 'production' ? 'production' : 'local');
+const env =
+  process.env.RELAY_ENV ?? (process.env.NODE_ENV === 'production' ? 'production' : 'local');
 if (!url) {
   console.error('DATABASE_URL_MIGRATOR is required.');
   process.exit(1);

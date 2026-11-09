@@ -23,7 +23,11 @@ const REDACT_PATHS = [
   '*.uploadUrl',
 ];
 
-export function createLogger(options: { level: string; service: string; pretty?: boolean }): Logger {
+export function createLogger(options: {
+  level: string;
+  service: string;
+  pretty?: boolean;
+}): Logger {
   return pino({
     level: options.level,
     base: { service: options.service },

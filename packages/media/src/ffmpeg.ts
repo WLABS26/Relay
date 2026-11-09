@@ -18,7 +18,8 @@ export interface MediaToolConfig {
 }
 
 /** Demuxers permitted for uploads. */
-export const DEMUXER_WHITELIST = 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,jpeg_pipe,png_pipe,webp_pipe,image2';
+export const DEMUXER_WHITELIST =
+  'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,jpeg_pipe,png_pipe,webp_pipe,image2';
 
 const PROTOCOL_WHITELIST = 'file';
 
@@ -47,16 +48,31 @@ const ENCRYPTED_TAGS = new Set(['encv', 'enca', 'enct', 'encs', 'drmi', 'drms'])
 
 /** Parse `ffprobe -of json -show_format -show_streams` output into Relay's summary. */
 export function parseProbeJson(json: unknown): ProbeSummary {
-  const root = (json ?? {}) as { format?: Record<string, unknown>; streams?: Array<Record<string, unknown>> };
+  const root = (json ?? {}) as {
+    format?: Record<string, unknown>;
+    streams?: Array<Record<string, unknown>>;
+  };
   const format = root.format ?? {};
   let encrypted = false;
   const streams: ProbeStream[] = (root.streams ?? []).map((s) => {
-    const type = (['video', 'audio', 'subtitle', 'data', 'attachment'] as const).find((t) => t === s.codec_type) ?? 'unknown';
+    const type =
+      (['video', 'audio', 'subtitle', 'data', 'attachment'] as const).find(
+        (t) => t === s.codec_type,
+      ) ?? 'unknown';
     const tag = typeof s.codec_tag_string === 'string' ? s.codec_tag_string : null;
     if (tag && ENCRYPTED_TAGS.has(tag)) encrypted = true;
-    const sideData = Array.isArray(s.side_data_list) ? (s.side_data_list as Array<Record<string, unknown>>) : [];
-    if (sideData.some((d) => typeof d.side_data_type === 'string' && /encryption/i.test(d.side_data_type))) encrypted = true;
-    const displayMatrix = sideData.find((d) => typeof d.rotation === 'number' || typeof d.rotation === 'string');
+    const sideData = Array.isArray(s.side_data_list)
+      ? (s.side_data_list as Array<Record<string, unknown>>)
+      : [];
+    if (
+      sideData.some(
+        (d) => typeof d.side_data_type === 'string' && /encryption/i.test(d.side_data_type),
+      )
+    )
+      encrypted = true;
+    const displayMatrix = sideData.find(
+      (d) => typeof d.rotation === 'number' || typeof d.rotation === 'string',
+    );
     const tags = (s.tags ?? {}) as Record<string, unknown>;
     // ffprobe reports display-matrix rotation counter-clockwise (e.g. -90); normalise to 0..359 clockwise.
     const rawRotation = num(displayMatrix?.rotation) ?? num(tags.rotate) ?? 0;
@@ -98,25 +114,47 @@ export function parseProbeJson(json: unknown): ProbeSummary {
 }
 
 export async function ffprobeVersion(config: MediaToolConfig): Promise<string> {
-  const result = await runTool(config.ffprobePath, ['-hide_banner', '-version'], limits(config, { timeoutMs: 10_000 }));
+  const result = await runTool(
+    config.ffprobePath,
+    ['-hide_banner', '-version'],
+    limits(config, { timeoutMs: 10_000 }),
+  );
   return result.stdout.toString('utf8').split('\n')[0]?.trim().slice(0, 120) ?? 'unknown';
 }
 
-export async function probeFile(config: MediaToolConfig, inputPath: string, demuxer: string): Promise<ProbeSummary> {
+export async function probeFile(
+  config: MediaToolConfig,
+  inputPath: string,
+  demuxer: string,
+): Promise<ProbeSummary> {
   const args = [
-    '-v', 'error',
+    '-v',
+    'error',
     '-hide_banner',
-    '-protocol_whitelist', PROTOCOL_WHITELIST,
-    '-format_whitelist', DEMUXER_WHITELIST,
-    '-f', demuxer,
+    '-protocol_whitelist',
+    PROTOCOL_WHITELIST,
+    '-format_whitelist',
+    DEMUXER_WHITELIST,
+    '-f',
+    demuxer,
     '-show_format',
     '-show_streams',
-    '-of', 'json',
-    '-i', inputPath,
+    '-of',
+    'json',
+    '-i',
+    inputPath,
   ];
-  const result = await runTool(config.ffprobePath, args, limits(config, { timeoutMs: Math.min(config.timeoutSeconds * 1000, 120_000) }));
+  const result = await runTool(
+    config.ffprobePath,
+    args,
+    limits(config, { timeoutMs: Math.min(config.timeoutSeconds * 1000, 120_000) }),
+  );
   if (result.timedOut) throw new ToolError('ffprobe timed out', result);
-  if (result.code !== 0) throw new ToolError(`ffprobe could not read the file: ${result.stderr.trim().slice(0, 200)}`, result);
+  if (result.code !== 0)
+    throw new ToolError(
+      `ffprobe could not read the file: ${result.stderr.trim().slice(0, 200)}`,
+      result,
+    );
   let json: unknown;
   try {
     json = JSON.parse(result.stdout.toString('utf8'));
@@ -132,18 +170,30 @@ export async function probeFile(config: MediaToolConfig, inputPath: string, demu
 }
 
 /** True when any of the first packets carries encryption side data (CENC, WebM encryption). */
-async function firstPacketsEncrypted(config: MediaToolConfig, inputPath: string, demuxer: string): Promise<boolean> {
+async function firstPacketsEncrypted(
+  config: MediaToolConfig,
+  inputPath: string,
+  demuxer: string,
+): Promise<boolean> {
   const args = [
-    '-v', 'quiet',
+    '-v',
+    'quiet',
     '-hide_banner',
-    '-protocol_whitelist', PROTOCOL_WHITELIST,
-    '-format_whitelist', DEMUXER_WHITELIST,
-    '-f', demuxer,
-    '-read_intervals', '%+#3',
+    '-protocol_whitelist',
+    PROTOCOL_WHITELIST,
+    '-format_whitelist',
+    DEMUXER_WHITELIST,
+    '-f',
+    demuxer,
+    '-read_intervals',
+    '%+#3',
     '-show_packets',
-    '-show_entries', 'packet=stream_index:packet_side_data=side_data_type',
-    '-of', 'json',
-    '-i', inputPath,
+    '-show_entries',
+    'packet=stream_index:packet_side_data=side_data_type',
+    '-of',
+    'json',
+    '-i',
+    inputPath,
   ];
   const result = await runTool(config.ffprobePath, args, limits(config, { timeoutMs: 30_000 }));
   if (result.code !== 0 || result.timedOut) return false;
@@ -152,7 +202,9 @@ async function firstPacketsEncrypted(config: MediaToolConfig, inputPath: string,
       packets?: Array<{ side_data_list?: Array<{ side_data_type?: string }> }>;
     };
     return (parsed.packets ?? []).some((p) =>
-      (p.side_data_list ?? []).some((d) => typeof d.side_data_type === 'string' && /encryption/i.test(d.side_data_type)),
+      (p.side_data_list ?? []).some(
+        (d) => typeof d.side_data_type === 'string' && /encryption/i.test(d.side_data_type),
+      ),
     );
   } catch {
     return false;
@@ -162,31 +214,52 @@ async function firstPacketsEncrypted(config: MediaToolConfig, inputPath: string,
 const COMMON_INPUT = (demuxer: string, inputPath: string) => [
   '-nostdin',
   '-hide_banner',
-  '-loglevel', 'error',
-  '-protocol_whitelist', PROTOCOL_WHITELIST,
-  '-format_whitelist', DEMUXER_WHITELIST,
-  '-f', demuxer,
-  '-i', inputPath,
+  '-loglevel',
+  'error',
+  '-protocol_whitelist',
+  PROTOCOL_WHITELIST,
+  '-format_whitelist',
+  DEMUXER_WHITELIST,
+  '-f',
+  demuxer,
+  '-i',
+  inputPath,
 ];
 
 /** JPEG poster/thumbnail, longest side ≤ maxSide, display orientation applied. */
 export async function renderThumbnail(
   config: MediaToolConfig,
-  input: { path: string; demuxer: string; kind: 'video' | 'image'; durationMs: number | null; outputPath: string; maxSide: number },
+  input: {
+    path: string;
+    demuxer: string;
+    kind: 'video' | 'image';
+    durationMs: number | null;
+    outputPath: string;
+    maxSide: number;
+  },
 ): Promise<void> {
-  const seekSeconds = input.kind === 'video' && input.durationMs ? Math.min(1, input.durationMs / 2000) : 0;
+  const seekSeconds =
+    input.kind === 'video' && input.durationMs ? Math.min(1, input.durationMs / 2000) : 0;
   const scale = `scale=w='min(${input.maxSide},iw)':h='min(${input.maxSide},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
   const args = [
     ...(seekSeconds > 0 ? ['-ss', seekSeconds.toFixed(3)] : []),
     ...COMMON_INPUT(input.demuxer, input.path),
-    '-map', '0:v:0',
-    '-frames:v', '1',
-    '-vf', scale,
-    '-q:v', '4',
-    '-threads', String(config.threads),
-    '-f', 'image2',
-    '-c:v', 'mjpeg',
-    '-y', input.outputPath,
+    '-map',
+    '0:v:0',
+    '-frames:v',
+    '1',
+    '-vf',
+    scale,
+    '-q:v',
+    '4',
+    '-threads',
+    String(config.threads),
+    '-f',
+    'image2',
+    '-c:v',
+    'mjpeg',
+    '-y',
+    input.outputPath,
   ];
   await runToolOrThrow(config.ffmpegPath, args, limits(config, { maxFileBytes: 20 * 1024 * 1024 }));
 }
@@ -198,27 +271,53 @@ export async function renderThumbnail(
  */
 export async function renderProxy(
   config: MediaToolConfig,
-  input: { path: string; demuxer: string; outputPath: string; maxSide: number; maxOutputBytes: number },
+  input: {
+    path: string;
+    demuxer: string;
+    outputPath: string;
+    maxSide: number;
+    maxOutputBytes: number;
+  },
 ): Promise<void> {
   const scale = `scale=w='min(${input.maxSide},iw)':h='min(${input.maxSide},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
   const args = [
     ...COMMON_INPUT(input.demuxer, input.path),
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
-    '-vf', `${scale},fps=30`,
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '28',
-    '-pix_fmt', 'yuv420p',
-    '-g', '60',
-    '-c:a', 'aac',
-    '-b:a', '96k',
-    '-ac', '2',
-    '-movflags', '+faststart',
-    '-threads', String(config.threads),
-    '-fs', String(input.maxOutputBytes),
-    '-f', 'mp4',
-    '-y', input.outputPath,
+    '-map',
+    '0:v:0',
+    '-map',
+    '0:a:0?',
+    '-vf',
+    `${scale},fps=30`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '28',
+    '-pix_fmt',
+    'yuv420p',
+    '-g',
+    '60',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '96k',
+    '-ac',
+    '2',
+    '-movflags',
+    '+faststart',
+    '-threads',
+    String(config.threads),
+    '-fs',
+    String(input.maxOutputBytes),
+    '-f',
+    'mp4',
+    '-y',
+    input.outputPath,
   ];
-  await runToolOrThrow(config.ffmpegPath, args, limits(config, { maxFileBytes: input.maxOutputBytes + 1024 * 1024 }));
+  await runToolOrThrow(
+    config.ffmpegPath,
+    args,
+    limits(config, { maxFileBytes: input.maxOutputBytes + 1024 * 1024 }),
+  );
 }

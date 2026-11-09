@@ -78,7 +78,10 @@ export async function runTool(
     const child = spawn(file, argv, {
       cwd: options.cwd,
       // Minimal environment: no credentials or config reach the media binary.
-      env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LC_ALL: 'C' } as unknown as NodeJS.ProcessEnv,
+      env: {
+        PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+        LC_ALL: 'C',
+      } as unknown as NodeJS.ProcessEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true, // own process group, so the whole tree can be killed
       shell: false,
@@ -130,7 +133,14 @@ export async function runTool(
       settled = true;
       clearTimeout(timer);
       options.signal?.removeEventListener('abort', onAbort);
-      resolve({ code, signal, stdout: Buffer.concat(out), stderr: err, timedOut, durationMs: Date.now() - started });
+      resolve({
+        code,
+        signal,
+        stdout: Buffer.concat(out),
+        stderr: err,
+        timedOut,
+        durationMs: Date.now() - started,
+      });
     });
   });
 }
@@ -142,9 +152,13 @@ export async function runToolOrThrow(
   options: { cwd?: string; signal?: AbortSignal } = {},
 ): Promise<RunResult> {
   const result = await runTool(command, args, limits, options);
-  if (result.timedOut) throw new ToolError(`${command} timed out after ${limits.timeoutMs} ms`, result);
+  if (result.timedOut)
+    throw new ToolError(`${command} timed out after ${limits.timeoutMs} ms`, result);
   if (result.code !== 0) {
-    throw new ToolError(`${command} exited with ${result.code ?? result.signal}: ${result.stderr.trim().slice(0, 300)}`, result);
+    throw new ToolError(
+      `${command} exited with ${result.code ?? result.signal}: ${result.stderr.trim().slice(0, 300)}`,
+      result,
+    );
   }
   return result;
 }

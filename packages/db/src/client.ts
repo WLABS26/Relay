@@ -19,7 +19,8 @@ const relayTypes = {
     if (oid === INT8_OID) {
       return (value: string) => {
         const n = Number(value);
-        if (!Number.isSafeInteger(n)) throw new RangeError(`int8 value ${value} exceeds Number.MAX_SAFE_INTEGER`);
+        if (!Number.isSafeInteger(n))
+          throw new RangeError(`int8 value ${value} exceeds Number.MAX_SAFE_INTEGER`);
         return n;
       };
     }
@@ -61,7 +62,9 @@ export function createDatabase(pool: pg.Pool): Database {
 }
 
 export async function checkDatabase(db: Executor): Promise<{ schemaVersion: string | null }> {
-  const row = await sql<{ value: string }>`SELECT value FROM relay_schema_info WHERE key = 'schema_version'`
+  const row = await sql<{
+    value: string;
+  }>`SELECT value FROM relay_schema_info WHERE key = 'schema_version'`
     .execute(db)
     .then((r) => r.rows[0]);
   return { schemaVersion: row?.value ?? null };

@@ -15,7 +15,15 @@ const config: NextConfig = {
   ...(process.env.NEXT_OUTPUT === 'standalone' ? { output: 'standalone' as const } : {}),
   outputFileTracingRoot: repoRoot,
   // Workspace packages ship TypeScript source.
-  transpilePackages: ['@relay/ui', '@relay/domain', '@relay/config', '@relay/services', '@relay/db', '@relay/media', '@relay/providers'],
+  transpilePackages: [
+    '@relay/ui',
+    '@relay/domain',
+    '@relay/config',
+    '@relay/services',
+    '@relay/db',
+    '@relay/media',
+    '@relay/providers',
+  ],
   serverExternalPackages: ['pg', 'pino', 'graphile-worker', 'openid-client'],
   devIndicators: false,
   // Do not write generated agent instruction files into the repo (see CLAUDE.md instead).

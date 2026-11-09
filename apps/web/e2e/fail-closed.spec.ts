@@ -4,9 +4,17 @@ import { expect, test } from '@playwright/test';
 import { REPO_ROOT } from './env';
 
 /** Production configuration with demo auth must refuse to start (web and worker). */
-function run(command: string, args: string[], cwd: string, env: Record<string, string>): Promise<{ code: number | null; output: string }> {
+function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: Record<string, string>,
+): Promise<{ code: number | null; output: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...env, RELAY_SKIP_DOTENV: 'true' } as NodeJS.ProcessEnv });
+    const child = spawn(command, args, {
+      cwd,
+      env: { ...process.env, ...env, RELAY_SKIP_DOTENV: 'true' } as NodeJS.ProcessEnv,
+    });
     let output = '';
     child.stdout.on('data', (d) => (output += String(d)));
     child.stderr.on('data', (d) => (output += String(d)));
@@ -63,19 +71,38 @@ const validProductionWithoutKmsSupport = {
 
 test.describe('fail closed in production', () => {
   test('the web server refuses a valid production config until the KMS provider exists', async () => {
-    const { code, output } = await run('pnpm', ['exec', 'next', 'start', '--port', '3199'], path.join(REPO_ROOT, 'apps/web'), validProductionWithoutKmsSupport);
+    const { code, output } = await run(
+      'pnpm',
+      ['exec', 'next', 'start', '--port', '3199'],
+      path.join(REPO_ROOT, 'apps/web'),
+      validProductionWithoutKmsSupport,
+    );
     expect(code).toBe(78);
-    expect(output).toContain('the KMS key provider ships with the provider-credential milestone (M3)');
+    expect(output).toContain(
+      'the KMS key provider ships with the provider-credential milestone (M3)',
+    );
   });
 
   test('the worker refuses a valid production config until the KMS provider exists', async () => {
-    const { code, output } = await run('pnpm', ['exec', 'tsx', 'src/main.ts'], path.join(REPO_ROOT, 'apps/worker'), validProductionWithoutKmsSupport);
+    const { code, output } = await run(
+      'pnpm',
+      ['exec', 'tsx', 'src/main.ts'],
+      path.join(REPO_ROOT, 'apps/worker'),
+      validProductionWithoutKmsSupport,
+    );
     expect(code).toBe(78);
-    expect(output).toContain('the KMS key provider ships with the provider-credential milestone (M3)');
+    expect(output).toContain(
+      'the KMS key provider ships with the provider-credential milestone (M3)',
+    );
   });
 
   test('the web server refuses to start with demo auth and default secrets', async () => {
-    const { code, output } = await run('pnpm', ['exec', 'next', 'start', '--port', '3199'], path.join(REPO_ROOT, 'apps/web'), productionWithDemo);
+    const { code, output } = await run(
+      'pnpm',
+      ['exec', 'next', 'start', '--port', '3199'],
+      path.join(REPO_ROOT, 'apps/web'),
+      productionWithDemo,
+    );
     expect(code).toBe(78);
     expect(output).toContain('RELAY_DEMO_MODE must be false in production');
     expect(output).toContain('RELAY_SESSION_SECRET is a known development default');
@@ -83,7 +110,12 @@ test.describe('fail closed in production', () => {
   });
 
   test('the worker refuses to start with demo auth and default secrets', async () => {
-    const { code, output } = await run('pnpm', ['exec', 'tsx', 'src/main.ts'], path.join(REPO_ROOT, 'apps/worker'), productionWithDemo);
+    const { code, output } = await run(
+      'pnpm',
+      ['exec', 'tsx', 'src/main.ts'],
+      path.join(REPO_ROOT, 'apps/worker'),
+      productionWithDemo,
+    );
     expect(code).toBe(78);
     expect(output).toContain('RELAY_DEMO_MODE must be false in production');
   });

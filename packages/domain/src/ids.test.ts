@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ManualClock, createIdGenerator, hashToSeed, isUuid, seededRandom, seededRandomBytes, uuidv7 } from './ids';
+import {
+  ManualClock,
+  createIdGenerator,
+  hashToSeed,
+  isUuid,
+  seededRandom,
+  seededRandomBytes,
+  uuidv7,
+} from './ids';
 
 describe('uuidv7', () => {
   it('encodes the millisecond timestamp, version 7 and the RFC variant', () => {

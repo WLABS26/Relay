@@ -12,7 +12,12 @@ const id = z.uuid();
 export const TASKS = {
   'asset.probe': {
     pool: 'media',
-    schema: z.object({ workspaceId: id, assetId: id, uploadSessionId: id, correlationId: z.string().max(100).optional() }),
+    schema: z.object({
+      workspaceId: id,
+      assetId: id,
+      uploadSessionId: id,
+      correlationId: z.string().max(100).optional(),
+    }),
     maxAttempts: 3,
   },
   'publish.advance': {
@@ -29,7 +34,12 @@ export const TASKS = {
   },
   'publish.reconcile': {
     pool: 'general',
-    schema: z.object({ workspaceId: id, postDestinationId: id, intentId: id, correlationId: z.string().max(100).optional() }),
+    schema: z.object({
+      workspaceId: id,
+      postDestinationId: id,
+      intentId: id,
+      correlationId: z.string().max(100).optional(),
+    }),
     maxAttempts: 5,
   },
   'metrics.refresh': {
@@ -41,8 +51,16 @@ export const TASKS = {
     }),
     maxAttempts: 5,
   },
-  'maintenance.reconcile_due': { pool: 'general', schema: z.object({}).passthrough(), maxAttempts: 1 },
-  'maintenance.expire_uploads': { pool: 'general', schema: z.object({}).passthrough(), maxAttempts: 1 },
+  'maintenance.reconcile_due': {
+    pool: 'general',
+    schema: z.object({}).passthrough(),
+    maxAttempts: 1,
+  },
+  'maintenance.expire_uploads': {
+    pool: 'general',
+    schema: z.object({}).passthrough(),
+    maxAttempts: 1,
+  },
   'maintenance.cleanup': { pool: 'general', schema: z.object({}).passthrough(), maxAttempts: 1 },
 } as const;
 

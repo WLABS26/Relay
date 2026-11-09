@@ -25,7 +25,10 @@ import {
 } from './helpers';
 
 /** Wrap the registry so a test can stall one provider phase (simulating a hung or dead worker). */
-function stallingRegistry(base: AdapterRegistry, stall: { phase: string; when: 'before' | 'after'; gate: Promise<void> } | null): AdapterRegistry {
+function stallingRegistry(
+  base: AdapterRegistry,
+  stall: { phase: string; when: 'before' | 'after'; gate: Promise<void> } | null,
+): AdapterRegistry {
   return {
     metrics: base.metrics.bind(base),
     publishing(provider, mode) {
@@ -50,7 +53,11 @@ function stallingRegistry(base: AdapterRegistry, stall: { phase: string; when: '
 }
 
 async function remotePosts(c: Contexts, operationPrefix: string) {
-  return c.worker.db.selectFrom('providerSim.remotePosts').selectAll().where('operationId', 'like', `${operationPrefix}%`).execute();
+  return c.worker.db
+    .selectFrom('providerSim.remotePosts')
+    .selectAll()
+    .where('operationId', 'like', `${operationPrefix}%`)
+    .execute();
 }
 
 describe('publish reliability: retries, unknown outcomes, takeover and mixed results (M1 gate)', () => {
@@ -79,10 +86,27 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
   const asap = async (key: string, extraKeys: string[] = []) => {
     // Accounts are reused across tests: keep posts beyond the 2 h minimum gap (and out of quiet hours).
     clock.advance(3 * 3600_000);
-    if (clock.now().getUTCHours() >= 21 || clock.now().getUTCHours() < 6) clock.set(new Date(Date.UTC(clock.now().getUTCFullYear(), clock.now().getUTCMonth(), clock.now().getUTCDate() + (clock.now().getUTCHours() >= 21 ? 1 : 0), 7)));
+    if (clock.now().getUTCHours() >= 21 || clock.now().getUTCHours() < 6)
+      clock.set(
+        new Date(
+          Date.UTC(
+            clock.now().getUTCFullYear(),
+            clock.now().getUTCMonth(),
+            clock.now().getUTCDate() + (clock.now().getUTCHours() >= 21 ? 1 : 0),
+            7,
+          ),
+        ),
+      );
     const p = await approvedPost(c, t, { destinationKeys: [key, ...extraKeys], assetIds: [video] });
     for (const k of [key, ...extraKeys]) {
-      await scheduleDestination(c.app, t.owner, t.workspaceId, p.destinations[k]!.id, { expectedVersion: p.destinations[k]!.version, mode: 'asap' }, meta);
+      await scheduleDestination(
+        c.app,
+        t.owner,
+        t.workspaceId,
+        p.destinations[k]!.id,
+        { expectedVersion: p.destinations[k]!.version, mode: 'asap' },
+        meta,
+      );
     }
     clock.advance(10_000);
     return p;
@@ -96,10 +120,16 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
     expect(yt.state).toBe('published');
     expect(ig.state).toBe('failed_permanent');
     expect(fb.state).toBe('needs_reconciliation');
-    expect(fb.steps).toEqual(expect.arrayContaining(['dispatch:unknown', 'reconcile:indeterminate']));
+    expect(fb.steps).toEqual(
+      expect.arrayContaining(['dispatch:unknown', 'reconcile:indeterminate']),
+    );
 
     const detail = await getPostDetail(c.app, t.owner, t.workspaceId, p.postId);
-    expect(detail.rollup).toMatchObject({ kind: 'mixed', attention: 'needs_reconciliation', total: 3 });
+    expect(detail.rollup).toMatchObject({
+      kind: 'mixed',
+      attention: 'needs_reconciliation',
+      total: 3,
+    });
     expect(detail.rollup.label).toMatch(/Mixed: /);
     const rejected = detail.destinations.find((d) => d.id === p.destinations.igReject!.id)!;
     expect(rejected.stateReason).toBe('sim_format_rejected');
@@ -108,12 +138,43 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
 
     // The operator verifies on the platform and links the real external ID.
     const fbPd = await destinationState(c.app, t.workspaceId, p.destinations.fbAmbiguous!.id);
-    const [remote] = await c.worker.db.selectFrom('providerSim.remotePosts').selectAll().where('accountRef', '=', (await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) => tx.selectFrom('socialAccounts').select('providerAccountId').where('id', '=', t.destinations.fbAmbiguous!.socialAccountId).executeTakeFirstOrThrow())).providerAccountId).execute();
+    const [remote] = await c.worker.db
+      .selectFrom('providerSim.remotePosts')
+      .selectAll()
+      .where(
+        'accountRef',
+        '=',
+        (
+          await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) =>
+            tx
+              .selectFrom('socialAccounts')
+              .select('providerAccountId')
+              .where('id', '=', t.destinations.fbAmbiguous!.socialAccountId)
+              .executeTakeFirstOrThrow(),
+          )
+        ).providerAccountId,
+      )
+      .execute();
     expect(remote?.status).toBe('published');
-    const linked = await resolveReconciliation(c.app, t.owner, t.workspaceId, p.destinations.fbAmbiguous!.id, { action: 'link_external', expectedVersion: fbPd.version, externalId: remote!.externalId, reason: 'Verified on the simulated platform dashboard' }, meta);
+    const linked = await resolveReconciliation(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      p.destinations.fbAmbiguous!.id,
+      {
+        action: 'link_external',
+        expectedVersion: fbPd.version,
+        externalId: remote!.externalId,
+        reason: 'Verified on the simulated platform dashboard',
+      },
+      meta,
+    );
     expect(linked.state).toBe('published');
     const after = await getPostDetail(c.app, t.owner, t.workspaceId, p.postId);
-    expect(after.destinations.find((d) => d.id === p.destinations.fbAmbiguous!.id)).toMatchObject({ state: 'published', linkMethod: 'operator_linked' });
+    expect(after.destinations.find((d) => d.id === p.destinations.fbAmbiguous!.id)).toMatchObject({
+      state: 'published',
+      linkMethod: 'operator_linked',
+    });
     expect(after.timeline.map((e) => e.action)).toContain('publication.linked');
   });
 
@@ -142,7 +203,12 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
     expect(r3.state).toBe('published');
     expect(r3.steps.filter((s) => s === 'wait_processing:waiting')).toHaveLength(2);
     const attempts = await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) =>
-      tx.selectFrom('publishAttempts').select(['phase', 'status', 'retryAfter']).where('postDestinationId', '=', rate.destinations.ytRate!.id).orderBy('startedAt').execute(),
+      tx
+        .selectFrom('publishAttempts')
+        .select(['phase', 'status', 'retryAfter'])
+        .where('postDestinationId', '=', rate.destinations.ytRate!.id)
+        .orderBy('startedAt')
+        .execute(),
     );
     expect(attempts.find((a) => a.status === 'rate_limited')?.retryAfter).toBeInstanceOf(Date);
   });
@@ -156,9 +222,19 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
       const p = await asap('yt');
       const id = p.destinations.yt!.id;
       const intent = await withTenant(c.worker.db, { workspaceId: t.workspaceId }, (tx) =>
-        tx.selectFrom('postDestinations as pd').innerJoin('publishIntents as i', 'i.id', 'pd.activeIntentId').select(['i.id', 'i.intentVersion', 'i.operationKey']).where('pd.id', '=', id).executeTakeFirstOrThrow(),
+        tx
+          .selectFrom('postDestinations as pd')
+          .innerJoin('publishIntents as i', 'i.id', 'pd.activeIntentId')
+          .select(['i.id', 'i.intentVersion', 'i.operationKey'])
+          .where('pd.id', '=', id)
+          .executeTakeFirstOrThrow(),
       );
-      const payload = { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id, intentVersion: intent.intentVersion };
+      const payload = {
+        workspaceId: t.workspaceId,
+        postDestinationId: id,
+        intentId: intent.id,
+        intentVersion: intent.intentVersion,
+      };
       for (let i = 0; i < 3; i++) await advancePublish(c.worker, payload, { workerId: 'worker-A' });
       const hung = advancePublish(c.worker, payload, { workerId: 'worker-A' }); // claims dispatch, writes, then hangs
       await new Promise((r) => setTimeout(r, 300));
@@ -166,13 +242,32 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
       clock.advance(5 * 60_000); // lease expires
       const takeover = await advancePublish(c.worker, payload, { workerId: 'worker-B' });
       expect(takeover.kind).toBe('reconcile');
-      expect((await destinationState(c.worker, t.workspaceId, id)).state).toBe('needs_reconciliation');
+      expect((await destinationState(c.worker, t.workspaceId, id)).state).toBe(
+        'needs_reconciliation',
+      );
       release();
       expect((await hung).kind).toBe('lost_lease'); // the stale worker cannot commit
-      expect(await reconcilePublish(c.worker, { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id }, { workerId: 'worker-B' })).toBe('published');
+      expect(
+        await reconcilePublish(
+          c.worker,
+          { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id },
+          { workerId: 'worker-B' },
+        ),
+      ).toBe('published');
       expect(await remotePosts(c, intent.operationKey)).toHaveLength(1);
-      const attempts = await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) => tx.selectFrom('publishAttempts').select(['workerId', 'phase', 'status', 'errorCode']).where('postDestinationId', '=', id).orderBy('startedAt').execute());
-      expect(attempts.find((a) => a.phase === 'dispatch')).toMatchObject({ workerId: 'worker-A', status: 'unknown', errorCode: 'worker_lost' });
+      const attempts = await withTenant(c.app.db, { workspaceId: t.workspaceId }, (tx) =>
+        tx
+          .selectFrom('publishAttempts')
+          .select(['workerId', 'phase', 'status', 'errorCode'])
+          .where('postDestinationId', '=', id)
+          .orderBy('startedAt')
+          .execute(),
+      );
+      expect(attempts.find((a) => a.phase === 'dispatch')).toMatchObject({
+        workerId: 'worker-A',
+        status: 'unknown',
+        errorCode: 'worker_lost',
+      });
     } finally {
       c.worker.registry = original;
       release();
@@ -188,16 +283,34 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
       const p = await asap('yt');
       const id = p.destinations.yt!.id;
       const intent = await withTenant(c.worker.db, { workspaceId: t.workspaceId }, (tx) =>
-        tx.selectFrom('postDestinations as pd').innerJoin('publishIntents as i', 'i.id', 'pd.activeIntentId').select(['i.id', 'i.intentVersion', 'i.operationKey']).where('pd.id', '=', id).executeTakeFirstOrThrow(),
+        tx
+          .selectFrom('postDestinations as pd')
+          .innerJoin('publishIntents as i', 'i.id', 'pd.activeIntentId')
+          .select(['i.id', 'i.intentVersion', 'i.operationKey'])
+          .where('pd.id', '=', id)
+          .executeTakeFirstOrThrow(),
       );
-      const payload = { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id, intentVersion: intent.intentVersion };
+      const payload = {
+        workspaceId: t.workspaceId,
+        postDestinationId: id,
+        intentId: intent.id,
+        intentVersion: intent.intentVersion,
+      };
       for (let i = 0; i < 3; i++) await advancePublish(c.worker, payload, { workerId: 'worker-A' });
       const hung = advancePublish(c.worker, payload, { workerId: 'worker-A' });
       await new Promise((r) => setTimeout(r, 300));
       clock.advance(5 * 60_000);
-      expect((await advancePublish(c.worker, payload, { workerId: 'worker-B' })).kind).toBe('reconcile');
+      expect((await advancePublish(c.worker, payload, { workerId: 'worker-B' })).kind).toBe(
+        'reconcile',
+      );
       c.worker.registry = original; // the dead worker never comes back
-      expect(await reconcilePublish(c.worker, { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id }, { workerId: 'worker-B' })).toBe('resumed');
+      expect(
+        await reconcilePublish(
+          c.worker,
+          { workspaceId: t.workspaceId, postDestinationId: id, intentId: intent.id },
+          { workerId: 'worker-B' },
+        ),
+      ).toBe('resumed');
       const run = await drivePublishing(c, t.workspaceId, id, { workerId: 'worker-B' });
       expect(run.state, run.steps.join(' → ')).toBe('published');
       expect(await remotePosts(c, intent.operationKey)).toHaveLength(1);
@@ -215,11 +328,39 @@ describe('publish reliability: retries, unknown outcomes, takeover and mixed res
     expect((await drivePublishing(c, t.workspaceId, id)).state).toBe('needs_reconciliation');
     const pd = await destinationState(c.app, t.workspaceId, id);
     // Owners/admins only; viewers and publishers cannot resolve.
-    const closed = await resolveReconciliation(c.app, t.owner, t.workspaceId, id, { action: 'close_not_published', expectedVersion: pd.version, reason: 'Not visible on the platform after 24 h' }, meta);
+    const closed = await resolveReconciliation(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      id,
+      {
+        action: 'close_not_published',
+        expectedVersion: pd.version,
+        reason: 'Not visible on the platform after 24 h',
+      },
+      meta,
+    );
     expect(closed.state).toBe('failed');
     const failed = await destinationState(c.app, t.workspaceId, id);
-    const retried = await retryDestination(c.app, t.owner, t.workspaceId, id, { expectedVersion: failed.version }, meta);
+    const retried = await retryDestination(
+      c.app,
+      t.owner,
+      t.workspaceId,
+      id,
+      { expectedVersion: failed.version },
+      meta,
+    );
     expect(retried.state).toBe('scheduled');
-    await expectAppError(retryDestination(c.app, t.owner, t.workspaceId, id, { expectedVersion: failed.version }, meta), 'version_conflict');
+    await expectAppError(
+      retryDestination(
+        c.app,
+        t.owner,
+        t.workspaceId,
+        id,
+        { expectedVersion: failed.version },
+        meta,
+      ),
+      'version_conflict',
+    );
   });
 });

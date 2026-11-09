@@ -84,15 +84,17 @@ export const acceptInvitationSchema = z.strictObject({
 export const createDemoConnectionSchema = z.strictObject({
   provider: z.enum(DESTINATION_PROVIDERS),
   displayName: shortText(80),
-  profile: z.enum([
-    'reliable',
-    'slow_processing',
-    'rate_limited_once',
-    'transient_then_ok',
-    'lost_response',
-    'ambiguous',
-    'reject_format',
-  ]).default('reliable'),
+  profile: z
+    .enum([
+      'reliable',
+      'slow_processing',
+      'rate_limited_once',
+      'transient_then_ok',
+      'lost_response',
+      'ambiguous',
+      'reject_format',
+    ])
+    .default('reliable'),
 });
 
 export const createDestinationSchema = z.strictObject({
@@ -105,7 +107,9 @@ export const createDestinationSchema = z.strictObject({
 
 export const rightsDeclarationSchema = z.strictObject({
   /** The uploader confirms they own the media or are authorised to publish it. */
-  confirmed: z.literal(true, { error: 'Confirm that you own this media or are authorised to use it' }),
+  confirmed: z.literal(true, {
+    error: 'Confirm that you own this media or are authorised to use it',
+  }),
   statementVersion: z.string().min(1).max(40),
   /** Optional evidence pointer (contract ID, licence URL) — stored, never fetched. */
   evidence: z.string().trim().max(500).optional(),
@@ -118,7 +122,10 @@ export const createUploadSchema = z.strictObject({
   mimeType: z.string().trim().toLowerCase().max(100),
   sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   /** Optional base64 SHA-256 of the whole file (enforced by storage for single PUTs). */
-  checksumSha256: z.string().regex(/^[A-Za-z0-9+/]{43}=$/).optional(),
+  checksumSha256: z
+    .string()
+    .regex(/^[A-Za-z0-9+/]{43}=$/)
+    .optional(),
   declaration: rightsDeclarationSchema,
 });
 
@@ -128,7 +135,12 @@ export const signPartsSchema = z.strictObject({
 
 export const completeUploadSchema = z.strictObject({
   parts: z
-    .array(z.strictObject({ partNumber: z.number().int().min(1).max(10_000), etag: z.string().min(1).max(200) }))
+    .array(
+      z.strictObject({
+        partNumber: z.number().int().min(1).max(10_000),
+        etag: z.string().min(1).max(200),
+      }),
+    )
     .max(10_000)
     .optional(),
 });
@@ -154,7 +166,11 @@ export const postContentSchema = z.strictObject({
   title: z.string().trim().max(200).nullable().default(null),
   caption: z.string().max(5000).default(''),
   mediaAssetIds: z.array(uuid).min(1).max(20),
-  declarations: declarationsSchema.default({ paidPartnership: false, alteredOrSyntheticMedia: false, madeForKids: null }),
+  declarations: declarationsSchema.default({
+    paidPartnership: false,
+    alteredOrSyntheticMedia: false,
+    madeForKids: null,
+  }),
   /** Per destination overrides keyed by page destination ID. */
   variants: z.record(uuid, destinationVariantSchema).default({}),
 });
@@ -200,9 +216,15 @@ export const scheduleSchema = z
     expectedVersion: z.number().int().min(1),
     mode: z.enum(['at', 'asap']),
     /** Wall-clock time in the page zone, required for mode "at". */
-    localTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional(),
+    localTime: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+      .optional(),
     /** Explicit offset for ambiguous (DST fall-back) times, e.g. "+01:00". */
-    offset: z.string().regex(/^[+-]\d{2}:\d{2}$/).optional(),
+    offset: z
+      .string()
+      .regex(/^[+-]\d{2}:\d{2}$/)
+      .optional(),
     lockSlot: z.boolean().default(false),
   })
   .refine((v) => v.mode === 'asap' || Boolean(v.localTime), {

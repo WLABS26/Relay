@@ -22,7 +22,12 @@ export interface DemoUser {
 export async function listDemoUsers(ctx: ServiceContext): Promise<DemoUser[]> {
   if (!demoSignInAvailable(ctx)) return [];
   const users = await withAuthBootstrap(ctx.db, (tx) =>
-    tx.selectFrom('users').select(['id', 'email', 'displayName']).where('isDemo', '=', true).where('status', '=', 'active').execute(),
+    tx
+      .selectFrom('users')
+      .select(['id', 'email', 'displayName'])
+      .where('isDemo', '=', true)
+      .where('status', '=', 'active')
+      .execute(),
   );
   const rank: Record<string, number> = { owner: 0, admin: 1, publisher: 2, editor: 3, viewer: 4 };
   const withMemberships = await Promise.all(
@@ -40,7 +45,12 @@ export async function listDemoUsers(ctx: ServiceContext): Promise<DemoUser[]> {
       return {
         user: u,
         best,
-        summary: ms.length > 0 ? ms.map((m) => `${m.role.charAt(0).toUpperCase()}${m.role.slice(1)} · ${m.name}`).join(', ') : 'No workspace yet',
+        summary:
+          ms.length > 0
+            ? ms
+                .map((m) => `${m.role.charAt(0).toUpperCase()}${m.role.slice(1)} · ${m.name}`)
+                .join(', ')
+            : 'No workspace yet',
       };
     }),
   );
@@ -49,8 +59,13 @@ export async function listDemoUsers(ctx: ServiceContext): Promise<DemoUser[]> {
     .map(({ user, summary }) => ({ email: user.email, displayName: user.displayName, summary }));
 }
 
-export async function demoSignIn(ctx: ServiceContext, email: string, previousToken?: string | null): Promise<IssuedSession> {
-  if (!demoSignInAvailable(ctx)) throw new AppError('demo_mode_disabled', 'Demo sign-in is not available.');
+export async function demoSignIn(
+  ctx: ServiceContext,
+  email: string,
+  previousToken?: string | null,
+): Promise<IssuedSession> {
+  if (!demoSignInAvailable(ctx))
+    throw new AppError('demo_mode_disabled', 'Demo sign-in is not available.');
   const user = await withAuthBootstrap(ctx.db, (tx) =>
     tx
       .selectFrom('users')
@@ -61,5 +76,9 @@ export async function demoSignIn(ctx: ServiceContext, email: string, previousTok
       .executeTakeFirst(),
   );
   if (!user) throw new AppError('not_found', 'Demo user not found');
-  return issueSession(ctx, { userId: user.id, method: 'demo', previousToken: previousToken ?? null });
+  return issueSession(ctx, {
+    userId: user.id,
+    method: 'demo',
+    previousToken: previousToken ?? null,
+  });
 }

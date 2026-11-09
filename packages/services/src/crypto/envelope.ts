@@ -28,14 +28,31 @@ export class DecryptionError extends Error {
 }
 
 /** Canonical associated data for a stored secret. */
-export function secretAad(parts: { purpose: string; workspaceId?: string | null; provider?: string | null; grantId?: string | null; id?: string | null }): Buffer {
+export function secretAad(parts: {
+  purpose: string;
+  workspaceId?: string | null;
+  provider?: string | null;
+  grantId?: string | null;
+  id?: string | null;
+}): Buffer {
   return Buffer.from(
-    ['relay:v1', parts.purpose, parts.workspaceId ?? '-', parts.provider ?? '-', parts.grantId ?? '-', parts.id ?? '-'].join('|'),
+    [
+      'relay:v1',
+      parts.purpose,
+      parts.workspaceId ?? '-',
+      parts.provider ?? '-',
+      parts.grantId ?? '-',
+      parts.id ?? '-',
+    ].join('|'),
     'utf8',
   );
 }
 
-function gcmSeal(key: Buffer, plaintext: Buffer, aad: Buffer): { iv: Buffer; tag: Buffer; ciphertext: Buffer } {
+function gcmSeal(
+  key: Buffer,
+  plaintext: Buffer,
+  aad: Buffer,
+): { iv: Buffer; tag: Buffer; ciphertext: Buffer } {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   cipher.setAAD(aad);
@@ -73,7 +90,13 @@ export class LocalKeyringProvider implements KeyEncryptionProvider {
   async unwrap(kid: string, wrapped: Buffer, aad: Buffer): Promise<Buffer> {
     const kek = this.keys.get(kid);
     if (!kek || wrapped.length < 28) throw new DecryptionError(`unknown key id ${kid}`);
-    return gcmOpen(kek, wrapped.subarray(0, 12), wrapped.subarray(12, 28), wrapped.subarray(28), aad);
+    return gcmOpen(
+      kek,
+      wrapped.subarray(0, 12),
+      wrapped.subarray(12, 28),
+      wrapped.subarray(28),
+      aad,
+    );
   }
 }
 
@@ -87,17 +110,27 @@ export class EnvelopeEncryptor {
       const { kid, wrapped } = await this.kek.wrap(dek, aad);
       const { iv, tag, ciphertext } = gcmSeal(dek, data, aad);
       const kidBytes = Buffer.from(kid, 'utf8');
-      if (kidBytes.length > 255 || wrapped.length > 65535) throw new Error('key id or wrapped key too long');
+      if (kidBytes.length > 255 || wrapped.length > 65535)
+        throw new Error('key id or wrapped key too long');
       const lens = Buffer.alloc(2);
       lens.writeUInt16BE(wrapped.length);
-      return Buffer.concat([Buffer.from([1, kidBytes.length]), kidBytes, lens, wrapped, iv, tag, ciphertext]);
+      return Buffer.concat([
+        Buffer.from([1, kidBytes.length]),
+        kidBytes,
+        lens,
+        wrapped,
+        iv,
+        tag,
+        ciphertext,
+      ]);
     } finally {
       dek.fill(0);
     }
   }
 
   async decrypt(sealed: Buffer, aad: Buffer): Promise<Buffer> {
-    if (sealed.length < 2 || sealed[0] !== 1) throw new DecryptionError('unsupported ciphertext version');
+    if (sealed.length < 2 || sealed[0] !== 1)
+      throw new DecryptionError('unsupported ciphertext version');
     const kidLen = sealed[1]!;
     let offset = 2;
     const kid = sealed.subarray(offset, offset + kidLen).toString('utf8');

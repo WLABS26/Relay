@@ -6,7 +6,8 @@ import type { Visibility } from './providers';
  */
 
 export type MediaKind = 'video' | 'image';
-export type SniffedContainer = 'mp4' | 'mov' | 'webm' | 'matroska' | 'jpeg' | 'png' | 'webp' | 'unknown';
+export type SniffedContainer =
+  'mp4' | 'mov' | 'webm' | 'matroska' | 'jpeg' | 'png' | 'webp' | 'unknown';
 
 export interface AllowedMime {
   kind: MediaKind;
@@ -18,16 +19,40 @@ export interface AllowedMime {
 }
 
 export const ALLOWED_UPLOAD_TYPES: Record<string, AllowedMime> = {
-  'video/mp4': { kind: 'video', extensions: ['mp4', 'm4v'], containers: ['mp4', 'mov'], demuxer: 'mov' },
-  'video/quicktime': { kind: 'video', extensions: ['mov'], containers: ['mov', 'mp4'], demuxer: 'mov' },
+  'video/mp4': {
+    kind: 'video',
+    extensions: ['mp4', 'm4v'],
+    containers: ['mp4', 'mov'],
+    demuxer: 'mov',
+  },
+  'video/quicktime': {
+    kind: 'video',
+    extensions: ['mov'],
+    containers: ['mov', 'mp4'],
+    demuxer: 'mov',
+  },
   'video/webm': { kind: 'video', extensions: ['webm'], containers: ['webm'], demuxer: 'matroska' },
-  'image/jpeg': { kind: 'image', extensions: ['jpg', 'jpeg'], containers: ['jpeg'], demuxer: 'jpeg_pipe' },
+  'image/jpeg': {
+    kind: 'image',
+    extensions: ['jpg', 'jpeg'],
+    containers: ['jpeg'],
+    demuxer: 'jpeg_pipe',
+  },
   'image/png': { kind: 'image', extensions: ['png'], containers: ['png'], demuxer: 'png_pipe' },
   'image/webp': { kind: 'image', extensions: ['webp'], containers: ['webp'], demuxer: 'webp_pipe' },
 };
 
 export const ALLOWED_VIDEO_CODECS = ['h264', 'hevc', 'vp9', 'av1', 'vp8'] as const;
-export const ALLOWED_AUDIO_CODECS = ['aac', 'mp3', 'opus', 'vorbis', 'ac3', 'eac3', 'alac', 'pcm_s16le'] as const;
+export const ALLOWED_AUDIO_CODECS = [
+  'aac',
+  'mp3',
+  'opus',
+  'vorbis',
+  'ac3',
+  'eac3',
+  'alac',
+  'pcm_s16le',
+] as const;
 export const ALLOWED_IMAGE_CODECS = ['mjpeg', 'png', 'webp'] as const;
 
 export function allowedTypeFor(mime: string): AllowedMime | undefined {
@@ -42,15 +67,23 @@ function ascii(bytes: Uint8Array, start: number, end: number): string {
 
 /** Identify a container from its leading bytes (needs ~64 bytes). Never trusts extensions. */
 export function sniffContainer(bytes: Uint8Array): SniffedContainer {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
+    return 'jpeg';
   if (
     bytes.length >= 8 &&
     [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((b, i) => bytes[i] === b)
   ) {
     return 'png';
   }
-  if (bytes.length >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') return 'webp';
-  if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+  if (bytes.length >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP')
+    return 'webp';
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0x1a &&
+    bytes[1] === 0x45 &&
+    bytes[2] === 0xdf &&
+    bytes[3] === 0xa3
+  ) {
     return ascii(bytes, 0, Math.min(bytes.length, 64)).includes('webm') ? 'webm' : 'matroska';
   }
   if (bytes.length >= 12) {
@@ -151,27 +184,42 @@ export type ValidationFailureCode =
   | 'too_large';
 
 export type ProbeValidation =
-  | { ok: true; media: NormalizedMedia }
-  | { ok: false; code: ValidationFailureCode; detail: string };
+  { ok: true; media: NormalizedMedia } | { ok: false; code: ValidationFailureCode; detail: string };
 
-const FAIL = (code: ValidationFailureCode, detail: string): ProbeValidation => ({ ok: false, code, detail });
+const FAIL = (code: ValidationFailureCode, detail: string): ProbeValidation => ({
+  ok: false,
+  code,
+  detail,
+});
 
-export function validateProbe(kind: MediaKind, probe: ProbeSummary, caps: MediaCaps): ProbeValidation {
-  if (probe.encrypted) return FAIL('encrypted_media', 'Encrypted or DRM-protected media cannot be processed.');
+export function validateProbe(
+  kind: MediaKind,
+  probe: ProbeSummary,
+  caps: MediaCaps,
+): ProbeValidation {
+  if (probe.encrypted)
+    return FAIL('encrypted_media', 'Encrypted or DRM-protected media cannot be processed.');
   if (probe.streams.length === 0) return FAIL('malformed_media', 'No readable streams were found.');
   if (probe.streams.length > caps.maxStreams) {
-    return FAIL('too_many_streams', `The file has ${probe.streams.length} streams (limit ${caps.maxStreams}).`);
+    return FAIL(
+      'too_many_streams',
+      `The file has ${probe.streams.length} streams (limit ${caps.maxStreams}).`,
+    );
   }
   const visual = probe.streams.filter((s) => s.type === 'video' && !s.attachedPic);
 
   if (kind === 'image') {
     const img = visual[0];
-    if (!img || !img.width || !img.height) return FAIL('no_image_stream', 'No decodable image was found.');
+    if (!img || !img.width || !img.height)
+      return FAIL('no_image_stream', 'No decodable image was found.');
     if (!img.codec || !(ALLOWED_IMAGE_CODECS as readonly string[]).includes(img.codec)) {
       return FAIL('unsupported_codec', `Image codec "${img.codec ?? 'unknown'}" is not supported.`);
     }
     if (img.width * img.height > caps.maxImagePixels) {
-      return FAIL('dimensions_too_large', `${img.width}×${img.height} exceeds the ${caps.maxImagePixels.toLocaleString('en')} pixel limit.`);
+      return FAIL(
+        'dimensions_too_large',
+        `${img.width}×${img.height} exceeds the ${caps.maxImagePixels.toLocaleString('en')} pixel limit.`,
+      );
     }
     return {
       ok: true,
@@ -192,12 +240,16 @@ export function validateProbe(kind: MediaKind, probe: ProbeSummary, caps: MediaC
   }
 
   const video = visual[0];
-  if (!video || !video.width || !video.height) return FAIL('no_video_stream', 'No video stream was found.');
+  if (!video || !video.width || !video.height)
+    return FAIL('no_video_stream', 'No video stream was found.');
   if (!video.codec || !(ALLOWED_VIDEO_CODECS as readonly string[]).includes(video.codec)) {
     return FAIL('unsupported_codec', `Video codec "${video.codec ?? 'unknown'}" is not supported.`);
   }
   const audio = probe.streams.find((s) => s.type === 'audio');
-  if (audio && (!audio.codec || !(ALLOWED_AUDIO_CODECS as readonly string[]).includes(audio.codec))) {
+  if (
+    audio &&
+    (!audio.codec || !(ALLOWED_AUDIO_CODECS as readonly string[]).includes(audio.codec))
+  ) {
     return FAIL('unsupported_codec', `Audio codec "${audio.codec ?? 'unknown'}" is not supported.`);
   }
   const durationMs = probe.durationMs ?? video.durationMs ?? null;
@@ -205,12 +257,18 @@ export function validateProbe(kind: MediaKind, probe: ProbeSummary, caps: MediaC
     return FAIL('malformed_media', 'The video duration could not be determined.');
   }
   if (durationMs > caps.maxVideoDurationMs) {
-    return FAIL('too_long', `The video is longer than the ${Math.round(caps.maxVideoDurationMs / 60000)}-minute limit.`);
+    return FAIL(
+      'too_long',
+      `The video is longer than the ${Math.round(caps.maxVideoDurationMs / 60000)}-minute limit.`,
+    );
   }
   if (Math.max(video.width, video.height) > caps.maxVideoDimension) {
-    return FAIL('dimensions_too_large', `${video.width}×${video.height} exceeds the ${caps.maxVideoDimension}px limit.`);
+    return FAIL(
+      'dimensions_too_large',
+      `${video.width}×${video.height} exceeds the ${caps.maxVideoDimension}px limit.`,
+    );
   }
-  const rotation = ((((video.rotation ?? 0) % 360) + 360) % 360);
+  const rotation = (((video.rotation ?? 0) % 360) + 360) % 360;
   const swap = rotation === 90 || rotation === 270;
   const avg = video.avgFrameRate ?? null;
   const real = video.realFrameRate ?? null;
@@ -268,7 +326,9 @@ export interface DestinationIssue {
   message: string;
 }
 
-export function formatOf(items: readonly DestinationMediaItem[]): 'video' | 'image' | 'carousel' | 'none' {
+export function formatOf(
+  items: readonly DestinationMediaItem[],
+): 'video' | 'image' | 'carousel' | 'none' {
   if (items.length === 0) return 'none';
   if (items.length > 1) return 'carousel';
   return items[0]!.kind;
@@ -276,7 +336,12 @@ export function formatOf(items: readonly DestinationMediaItem[]): 'video' | 'ima
 
 export function validateForDestination(
   profile: DestinationFormatProfile,
-  input: { media: readonly DestinationMediaItem[]; caption: string; title: string | null; visibility: Visibility },
+  input: {
+    media: readonly DestinationMediaItem[];
+    caption: string;
+    title: string | null;
+    visibility: Visibility;
+  },
 ): DestinationIssue[] {
   const issues: DestinationIssue[] = [];
   const format = formatOf(input.media);
@@ -285,17 +350,30 @@ export function validateForDestination(
     return ratio >= range.min - 0.005 && ratio <= range.max + 0.005;
   };
 
-  if (format === 'none') issues.push({ field: 'media', code: 'media_required', message: 'Add a video or image.' });
+  if (format === 'none')
+    issues.push({ field: 'media', code: 'media_required', message: 'Add a video or image.' });
   if (format === 'carousel') {
     const c = profile.carousel;
     if (!c) {
-      issues.push({ field: 'media', code: 'carousel_unsupported', message: 'This destination does not accept carousels.' });
+      issues.push({
+        field: 'media',
+        code: 'carousel_unsupported',
+        message: 'This destination does not accept carousels.',
+      });
     } else {
       if (input.media.length < c.minItems || input.media.length > c.maxItems) {
-        issues.push({ field: 'media', code: 'carousel_size', message: `Carousels need ${c.minItems}–${c.maxItems} items.` });
+        issues.push({
+          field: 'media',
+          code: 'carousel_size',
+          message: `Carousels need ${c.minItems}–${c.maxItems} items.`,
+        });
       }
       if (!c.allowVideo && input.media.some((m) => m.kind === 'video')) {
-        issues.push({ field: 'media', code: 'carousel_video_unsupported', message: 'Carousels here can only contain images.' });
+        issues.push({
+          field: 'media',
+          code: 'carousel_video_unsupported',
+          message: 'Carousels here can only contain images.',
+        });
       }
     }
   }
@@ -304,7 +382,8 @@ export function validateForDestination(
   const items = format === 'carousel' && !profile.carousel ? [] : input.media;
   for (const [index, item] of items.entries()) {
     const label = format === 'carousel' ? `Item ${index + 1}: ` : '';
-    const add = (code: string, message: string) => issues.push({ field: 'media', code, message: `${label}${message}` });
+    const add = (code: string, message: string) =>
+      issues.push({ field: 'media', code, message: `${label}${message}` });
     if (item.kind === 'video') {
       // A video in an image-only carousel is already reported above.
       if (format === 'carousel' && profile.carousel && !profile.carousel.allowVideo) continue;
@@ -313,34 +392,58 @@ export function validateForDestination(
         add('video_unsupported', 'This destination does not accept video.');
         continue;
       }
-      if (item.durationMs !== null && (item.durationMs < v.minDurationMs || item.durationMs > v.maxDurationMs)) {
-        add('video_duration', `Video must be ${Math.round(v.minDurationMs / 1000)}–${Math.round(v.maxDurationMs / 1000)} s here.`);
+      if (
+        item.durationMs !== null &&
+        (item.durationMs < v.minDurationMs || item.durationMs > v.maxDurationMs)
+      ) {
+        add(
+          'video_duration',
+          `Video must be ${Math.round(v.minDurationMs / 1000)}–${Math.round(v.maxDurationMs / 1000)} s here.`,
+        );
       }
-      if (item.sizeBytes > v.maxBytes) add('video_too_large', 'Video file is too large for this destination.');
-      if (!aspectOk(item, v.aspect)) add('video_aspect', 'Video aspect ratio is not accepted here.');
+      if (item.sizeBytes > v.maxBytes)
+        add('video_too_large', 'Video file is too large for this destination.');
+      if (!aspectOk(item, v.aspect))
+        add('video_aspect', 'Video aspect ratio is not accepted here.');
     } else {
       const i = profile.image;
       if (!i) {
         add('image_unsupported', 'This destination does not accept images.');
         continue;
       }
-      if (!i.mimes.includes(item.mime)) add('image_type', `${item.mime} images are not accepted here.`);
-      if (item.sizeBytes > i.maxBytes) add('image_too_large', 'Image is too large for this destination.');
-      if (!aspectOk(item, i.aspect)) add('image_aspect', 'Image aspect ratio is not accepted here.');
+      if (!i.mimes.includes(item.mime))
+        add('image_type', `${item.mime} images are not accepted here.`);
+      if (item.sizeBytes > i.maxBytes)
+        add('image_too_large', 'Image is too large for this destination.');
+      if (!aspectOk(item, i.aspect))
+        add('image_aspect', 'Image aspect ratio is not accepted here.');
     }
   }
   if ([...input.caption].length > profile.captionMaxLength) {
-    issues.push({ field: 'caption', code: 'caption_too_long', message: `Caption must be ${profile.captionMaxLength} characters or fewer.` });
+    issues.push({
+      field: 'caption',
+      code: 'caption_too_long',
+      message: `Caption must be ${profile.captionMaxLength} characters or fewer.`,
+    });
   }
   if (profile.title) {
     const t = input.title?.trim() ?? '';
-    if (profile.title.required && t.length === 0) issues.push({ field: 'title', code: 'title_required', message: 'A title is required here.' });
+    if (profile.title.required && t.length === 0)
+      issues.push({ field: 'title', code: 'title_required', message: 'A title is required here.' });
     if ([...t].length > profile.title.maxLength) {
-      issues.push({ field: 'title', code: 'title_too_long', message: `Title must be ${profile.title.maxLength} characters or fewer.` });
+      issues.push({
+        field: 'title',
+        code: 'title_too_long',
+        message: `Title must be ${profile.title.maxLength} characters or fewer.`,
+      });
     }
   }
   if (!profile.visibilities.includes(input.visibility)) {
-    issues.push({ field: 'visibility', code: 'visibility_unsupported', message: 'This visibility is not available for this destination.' });
+    issues.push({
+      field: 'visibility',
+      code: 'visibility_unsupported',
+      message: 'This visibility is not available for this destination.',
+    });
   }
   return issues;
 }

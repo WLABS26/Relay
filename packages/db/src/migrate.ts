@@ -22,7 +22,10 @@ import { GRAPHILE_WORKER_SCHEMA_REVISION } from './schema-version';
 
 export { GRAPHILE_WORKER_SCHEMA_REVISION, REQUIRED_SCHEMA_VERSION } from './schema-version';
 
-export const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
+export const MIGRATIONS_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../migrations',
+);
 
 const FILE_RE = /^(\d{4})_([a-z0-9_]+)\.sql$/;
 
@@ -60,7 +63,8 @@ export function loadMigrations(dir = MIGRATIONS_DIR): MigrationFile[] {
     });
   }
   const versions = migrations.map((m) => m.version);
-  if (new Set(versions).size !== versions.length) throw new Error('Duplicate migration version numbers');
+  if (new Set(versions).size !== versions.length)
+    throw new Error('Duplicate migration version numbers');
   return migrations;
 }
 
@@ -85,7 +89,10 @@ export async function migrate(options: {
 }): Promise<MigrateResult> {
   const logger = options.logger ?? consoleLogger;
   const files = loadMigrations(options.dir);
-  const client = new pg.Client({ connectionString: options.connectionString, application_name: 'relay-migrate' });
+  const client = new pg.Client({
+    connectionString: options.connectionString,
+    application_name: 'relay-migrate',
+  });
   await client.connect();
   const applied: string[] = [];
   try {
@@ -139,7 +146,9 @@ export async function migrate(options: {
       } catch (error) {
         await client.query('ROLLBACK');
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Migration ${file.version}_${file.name} failed: ${message}`, { cause: error });
+        throw new Error(`Migration ${file.version}_${file.name} failed: ${message}`, {
+          cause: error,
+        });
       }
       applied.push(`${file.version}_${file.name}`);
       logger.info(`applied ${file.version}_${file.name} (${Date.now() - started} ms)`);
@@ -152,7 +161,9 @@ export async function migrate(options: {
         if (level === 'error' || level === 'warning') logger.warn(`graphile-worker: ${message}`);
       }),
     });
-    const gw = await client.query<{ id: number }>('SELECT max(id)::int AS id FROM graphile_worker.migrations');
+    const gw = await client.query<{ id: number }>(
+      'SELECT max(id)::int AS id FROM graphile_worker.migrations',
+    );
     const revision = gw.rows[0]?.id ?? 0;
     if (revision !== GRAPHILE_WORKER_SCHEMA_REVISION) {
       throw new Error(
@@ -172,7 +183,9 @@ export async function migrate(options: {
     );
     return { applied, alreadyApplied: rows.length, graphileWorkerRevision: revision };
   } finally {
-    await client.query(`SELECT pg_advisory_unlock(hashtext('relay:schema-migrations'))`).catch(() => undefined);
+    await client
+      .query(`SELECT pg_advisory_unlock(hashtext('relay:schema-migrations'))`)
+      .catch(() => undefined);
     await client.end();
   }
 }

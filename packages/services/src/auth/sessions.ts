@@ -30,7 +30,11 @@ export function csrfTokenFor(secret: string, sessionId: string): string {
   return hmacSha256(secret, `csrf:v1:${sessionId}`).toString('base64url');
 }
 
-export function verifyCsrfToken(secret: string, sessionId: string, presented: string | null | undefined): boolean {
+export function verifyCsrfToken(
+  secret: string,
+  sessionId: string,
+  presented: string | null | undefined,
+): boolean {
   if (!presented || presented.length > 200) return false;
   return safeEqual(csrfTokenFor(secret, sessionId), presented);
 }
@@ -43,7 +47,9 @@ export async function issueSession(
   const token = randomToken(32);
   const sessionId = ctx.ids.next();
   const expiresAt = new Date(now.getTime() + ctx.config.session.absoluteTtlSeconds * 1000);
-  const idleExpiresAt = new Date(Math.min(expiresAt.getTime(), now.getTime() + ctx.config.session.idleTtlSeconds * 1000));
+  const idleExpiresAt = new Date(
+    Math.min(expiresAt.getTime(), now.getTime() + ctx.config.session.idleTtlSeconds * 1000),
+  );
   await withAuthBootstrap(ctx.db, async (tx) => {
     if (input.previousToken) {
       await tx
@@ -66,13 +72,25 @@ export async function issueSession(
         idleExpiresAt,
       })
       .execute();
-    await tx.updateTable('users').set({ lastSignInAt: now }).where('id', '=', input.userId).execute();
+    await tx
+      .updateTable('users')
+      .set({ lastSignInAt: now })
+      .where('id', '=', input.userId)
+      .execute();
   });
-  return { token, sessionId, expiresAt, csrfToken: csrfTokenFor(ctx.config.session.secret, sessionId) };
+  return {
+    token,
+    sessionId,
+    expiresAt,
+    csrfToken: csrfTokenFor(ctx.config.session.secret, sessionId),
+  };
 }
 
 /** Resolve a session token to its active user, sliding the idle timeout. */
-export async function validateSession(ctx: ServiceContext, token: string | null | undefined): Promise<SessionInfo | null> {
+export async function validateSession(
+  ctx: ServiceContext,
+  token: string | null | undefined,
+): Promise<SessionInfo | null> {
   if (!token || token.length < 32 || token.length > 100) return null;
   const now = ctx.clock.now();
   return withAuthBootstrap(ctx.db, async (tx) => {
@@ -99,19 +117,34 @@ export async function validateSession(ctx: ServiceContext, token: string | null 
     // Demo users can only sign in while demo mode is on.
     if ((row.authMethod === 'demo' || row.isDemo) && !ctx.config.demoMode) return null;
     if (now.getTime() - row.lastSeenAt.getTime() > TOUCH_INTERVAL_MS) {
-      const idle = new Date(Math.min(row.expiresAt.getTime(), now.getTime() + ctx.config.session.idleTtlSeconds * 1000));
-      await tx.updateTable('sessions').set({ lastSeenAt: now, idleExpiresAt: idle }).where('id', '=', row.sessionId).execute();
+      const idle = new Date(
+        Math.min(row.expiresAt.getTime(), now.getTime() + ctx.config.session.idleTtlSeconds * 1000),
+      );
+      await tx
+        .updateTable('sessions')
+        .set({ lastSeenAt: now, idleExpiresAt: idle })
+        .where('id', '=', row.sessionId)
+        .execute();
     }
     return {
       sessionId: row.sessionId,
       authMethod: row.authMethod as 'demo' | 'oidc',
       expiresAt: row.expiresAt,
-      user: { userId: row.userId, email: row.email, displayName: row.displayName, isDemo: row.isDemo },
+      user: {
+        userId: row.userId,
+        email: row.email,
+        displayName: row.displayName,
+        isDemo: row.isDemo,
+      },
     };
   });
 }
 
-export async function revokeSession(ctx: ServiceContext, session: SessionInfo, reason: 'sign_out' | 'admin' = 'sign_out'): Promise<void> {
+export async function revokeSession(
+  ctx: ServiceContext,
+  session: SessionInfo,
+  reason: 'sign_out' | 'admin' = 'sign_out',
+): Promise<void> {
   await withUser(ctx.db, session.user.userId, async (tx) => {
     await tx
       .updateTable('sessions')

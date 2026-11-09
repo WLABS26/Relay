@@ -28,16 +28,34 @@ export const quietHoursSchema = z.object({ start: hhmm, end: hhmm });
 export const publishingRulesSchema = z.object({
   postingWindows: z.array(postingWindowSchema).max(28),
   /** Minimum spacing between two posts on the same connected account. */
-  minGapMinutes: z.number().int().min(0).max(7 * 24 * 60),
+  minGapMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(7 * 24 * 60),
   maxPerDay: z.number().int().min(1).max(100),
   maxPerWeek: z.number().int().min(1).max(700),
   /** Local times when nothing may be dispatched; may wrap past midnight. */
   quietHours: z.array(quietHoursSchema).max(4),
   /** Minimum time between scheduling and dispatch (media readiness / provider prep). */
-  leadMinutes: z.number().int().min(0).max(24 * 60),
+  leadMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60),
   /** How late a dispatch may start before it is routed to review instead. */
-  lateGraceMinutes: z.number().int().min(0).max(24 * 60),
-  slotGranularityMinutes: z.union([z.literal(5), z.literal(10), z.literal(15), z.literal(30), z.literal(60)]),
+  lateGraceMinutes: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60),
+  slotGranularityMinutes: z.union([
+    z.literal(5),
+    z.literal(10),
+    z.literal(15),
+    z.literal(30),
+    z.literal(60),
+  ]),
   /** What to do when a chosen local time happens twice (DST fall-back). */
   ambiguousTimePolicy: z.enum(['ask', 'earlier', 'later']),
   /** Supervised automation is off by default and only owners/admins can change it (M6). */
@@ -69,7 +87,10 @@ export const DEFAULT_PUBLISHING_RULES: PublishingRules = {
 };
 
 /** True if minute-of-day `m` falls inside any quiet-hours range (ranges may wrap midnight). */
-export function inQuietHours(minuteOfDay: number, quietHours: PublishingRules['quietHours']): boolean {
+export function inQuietHours(
+  minuteOfDay: number,
+  quietHours: PublishingRules['quietHours'],
+): boolean {
   return quietHours.some(({ start, end }) => {
     const s = minutesOfDay(start);
     const e = minutesOfDay(end);

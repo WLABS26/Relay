@@ -4,7 +4,9 @@ import { createPost, listPosts } from '@relay/services';
 import { api, ApiResponse, meta } from '@/lib/server/api';
 type P = { workspaceId: string };
 export const GET = api<P>({}, async (c) => {
-  const q = z.object({ pageId: z.uuid().optional(), state: z.enum(DESTINATION_STATES).optional() }).parse(c.query());
+  const q = z
+    .object({ pageId: z.uuid().optional(), state: z.enum(DESTINATION_STATES).optional() })
+    .parse(c.query());
   const { posts } = await listPosts(c.ctx, c.user, c.params.workspaceId, q);
   return { posts };
 });

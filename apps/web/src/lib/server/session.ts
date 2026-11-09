@@ -42,17 +42,49 @@ export function sessionCookies(issued: IssuedSession): CookieSpec[] {
   const { session } = webContext().config;
   const maxAge = Math.max(0, Math.floor((issued.expiresAt.getTime() - Date.now()) / 1000));
   return [
-    { name: session.cookieName, value: issued.token, httpOnly: true, secure: session.secureCookies, sameSite: 'lax', path: '/', maxAge },
+    {
+      name: session.cookieName,
+      value: issued.token,
+      httpOnly: true,
+      secure: session.secureCookies,
+      sameSite: 'lax',
+      path: '/',
+      maxAge,
+    },
     // Readable by the page's own JavaScript (sent back as X-CSRF-Token); SameSite=Strict.
-    { name: session.csrfCookieName, value: issued.csrfToken, httpOnly: false, secure: session.secureCookies, sameSite: 'strict', path: '/', maxAge },
+    {
+      name: session.csrfCookieName,
+      value: issued.csrfToken,
+      httpOnly: false,
+      secure: session.secureCookies,
+      sameSite: 'strict',
+      path: '/',
+      maxAge,
+    },
   ];
 }
 
 export function clearedSessionCookies(): CookieSpec[] {
   const { session } = webContext().config;
   return [
-    { name: session.cookieName, value: '', httpOnly: true, secure: session.secureCookies, sameSite: 'lax', path: '/', maxAge: 0 },
-    { name: session.csrfCookieName, value: '', httpOnly: false, secure: session.secureCookies, sameSite: 'strict', path: '/', maxAge: 0 },
+    {
+      name: session.cookieName,
+      value: '',
+      httpOnly: true,
+      secure: session.secureCookies,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 0,
+    },
+    {
+      name: session.csrfCookieName,
+      value: '',
+      httpOnly: false,
+      secure: session.secureCookies,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: 0,
+    },
   ];
 }
 

@@ -1,12 +1,7 @@
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { isAppError } from '@relay/domain';
-import {
-  getWorkspace,
-  listMyWorkspaces,
-  listPages,
-  resolveWorkspaceSlug,
-} from '@relay/services';
+import { getWorkspace, listMyWorkspaces, listPages, resolveWorkspaceSlug } from '@relay/services';
 import { webContext } from './context';
 import { requireSession } from './session';
 

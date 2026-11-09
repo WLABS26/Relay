@@ -68,7 +68,12 @@ export const TRANSITIONS: Table = {
   },
   changes_requested: { submit: 'needs_review', ...PRE_DISPATCH_EDITABLE },
   // `submit` from approved re-requests review when the approval went stale (rights/media changed).
-  approved: { schedule: 'scheduled', submit: 'needs_review', ...PRE_DISPATCH_EDITABLE, expire: 'expired' },
+  approved: {
+    schedule: 'scheduled',
+    submit: 'needs_review',
+    ...PRE_DISPATCH_EDITABLE,
+    expire: 'expired',
+  },
   scheduled: {
     reschedule: 'scheduled',
     unschedule: 'approved',

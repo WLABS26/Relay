@@ -13,7 +13,10 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
     <main id="main" className="auth-panel">
       <Wordmark />
       <h1>Join a workspace</h1>
-      <p className="r-muted">You are signed in as {session.user.email}. The invitation must have been sent to this address.</p>
+      <p className="r-muted">
+        You are signed in as {session.user.email}. The invitation must have been sent to this
+        address.
+      </p>
       <AcceptInvitation token={decodeURIComponent(token)} />
     </main>
   );

@@ -8,7 +8,9 @@ import { assertDeploymentSupported } from '@relay/services';
 try {
   const config = loadConfig();
   assertDeploymentSupported(config);
-  console.log(`[relay-web] env=${config.env} demoMode=${config.demoMode} publicUrl=${config.publicOrigin}`);
+  console.log(
+    `[relay-web] env=${config.env} demoMode=${config.demoMode} publicUrl=${config.publicOrigin}`,
+  );
 } catch (error) {
   if (isConfigError(error)) {
     console.error(error.message);

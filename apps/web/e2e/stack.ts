@@ -30,10 +30,17 @@ for (const key of ['DATABASE_URL_MIGRATOR', 'DATABASE_URL_APP', 'DATABASE_URL_WO
 }
 
 const log = (m: string) => console.log(`[e2e-stack] ${m}`);
-await recreateDatabase({ migratorUrl: env.DATABASE_URL_MIGRATOR!, database: E2E_DATABASE, logger: { info: () => {}, warn: console.warn } });
+await recreateDatabase({
+  migratorUrl: env.DATABASE_URL_MIGRATOR!,
+  database: E2E_DATABASE,
+  logger: { info: () => {}, warn: console.warn },
+});
 log(`database ${E2E_DATABASE} recreated`);
 const config = parseConfig(env);
-await new ObjectStorage(config.storage).ensureBucket([`http://localhost:${E2E_PORT}`, `http://127.0.0.1:${E2E_PORT}`]);
+await new ObjectStorage(config.storage).ensureBucket([
+  `http://localhost:${E2E_PORT}`,
+  `http://127.0.0.1:${E2E_PORT}`,
+]);
 log(`bucket ${E2E_BUCKET} ready`);
 await seedDemo(config, { log: (m) => log(`seed: ${m}`) });
 
@@ -49,7 +56,12 @@ const start = (name: string, command: string, args: string[], cwd: string) => {
 };
 start('worker', 'pnpm', ['exec', 'tsx', 'src/main.ts'], path.join(REPO_ROOT, 'apps/worker'));
 const dev = process.env.E2E_DEV === '1';
-start('web', 'pnpm', ['exec', 'next', dev ? 'dev' : 'start', '--port', String(E2E_PORT)], path.join(REPO_ROOT, 'apps/web'));
+start(
+  'web',
+  'pnpm',
+  ['exec', 'next', dev ? 'dev' : 'start', '--port', String(E2E_PORT)],
+  path.join(REPO_ROOT, 'apps/web'),
+);
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.on(signal, () => {
     for (const c of children) c.kill('SIGTERM');

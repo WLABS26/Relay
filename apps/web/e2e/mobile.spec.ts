@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { signIn } from './helpers';
 
-test('the calendar switches to an agenda on small screens and keeps Move available', async ({ page }) => {
+test('the calendar switches to an agenda on small screens and keeps Move available', async ({
+  page,
+}) => {
   await signIn(page, 'Mara Lindqvist');
   await page.goto('/w/fernhill/calendar');
   await expect(page.getByRole('list', { name: 'Week view' })).toBeHidden();
@@ -9,6 +11,8 @@ test('the calendar switches to an agenda on small screens and keeps Move availab
   await expect(agenda).toBeVisible();
   await expect(agenda.getByRole('button', { name: /^Move / }).first()).toBeVisible();
   // No horizontal page scroll at phone width.
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
   expect(overflow).toBeLessThanOrEqual(0);
 });

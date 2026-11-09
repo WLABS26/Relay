@@ -71,7 +71,10 @@ const HEX: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padSt
  * RFC 9562 UUID version 7: 48-bit Unix millisecond timestamp, then random bits.
  * Time-ordered IDs keep B-tree inserts local and make (created_at, id) cursors stable.
  */
-export function uuidv7(nowMs: number = Date.now(), random: RandomBytes = cryptoRandomBytes): string {
+export function uuidv7(
+  nowMs: number = Date.now(),
+  random: RandomBytes = cryptoRandomBytes,
+): string {
   const bytes = random(16);
   const ts = BigInt(Math.max(0, Math.floor(nowMs)));
   bytes[0] = Number((ts >> 40n) & 0xffn);

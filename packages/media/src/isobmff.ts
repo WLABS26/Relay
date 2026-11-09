@@ -12,7 +12,19 @@ import { open } from 'node:fs/promises';
  * Whenever a limit stops inspection the scan reports `complete: false`.
  */
 
-const CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'moof', 'traf', 'mvex', 'edts', 'sinf', 'schi']);
+const CONTAINERS = new Set([
+  'moov',
+  'trak',
+  'mdia',
+  'minf',
+  'stbl',
+  'moof',
+  'traf',
+  'mvex',
+  'edts',
+  'sinf',
+  'schi',
+]);
 const PROTECTED_ENTRIES = new Set(['encv', 'enca', 'enct', 'encs', 'drmi', 'drms']);
 const PROTECTION_BOXES = new Set(['pssh', 'senc', 'tenc']);
 

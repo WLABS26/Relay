@@ -38,7 +38,11 @@ export function createSimulatorStore(db: Database): SimulatorStore {
   const table = 'providerSim.remotePosts' as const;
   return {
     async findByOperation(operationId) {
-      const row = await db.selectFrom(table).selectAll().where('operationId', '=', operationId).executeTakeFirst();
+      const row = await db
+        .selectFrom(table)
+        .selectAll()
+        .where('operationId', '=', operationId)
+        .executeTakeFirst();
       return row ? toPost(row as Row) : null;
     },
     async upsertStaged(post) {
@@ -47,7 +51,11 @@ export function createSimulatorStore(db: Database): SimulatorStore {
         .values({ ...post })
         .onConflict((oc) => oc.column('operationId').doNothing())
         .execute();
-      const row = await db.selectFrom(table).selectAll().where('operationId', '=', post.operationId).executeTakeFirstOrThrow();
+      const row = await db
+        .selectFrom(table)
+        .selectAll()
+        .where('operationId', '=', post.operationId)
+        .executeTakeFirstOrThrow();
       return toPost(row as Row);
     },
     async update(operationId, patch) {

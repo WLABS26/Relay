@@ -39,9 +39,13 @@ export async function withIdempotency<T>(
     return { ...result, replayed: false };
   }
   if (!KEY_RE.test(request.key)) {
-    throw new AppError('validation_failed', 'Idempotency-Key must be 8–200 characters of [A-Za-z0-9._:-]', {
-      fieldErrors: { 'Idempotency-Key': ['Invalid format'] },
-    });
+    throw new AppError(
+      'validation_failed',
+      'Idempotency-Key must be 8–200 characters of [A-Za-z0-9._:-]',
+      {
+        fieldErrors: { 'Idempotency-Key': ['Invalid format'] },
+      },
+    );
   }
   const requestHash = fingerprint({ operation: request.operation, payload: request.payload });
   const ttl = request.ttlSeconds ?? 24 * 3600;
@@ -61,10 +65,17 @@ export async function withIdempotency<T>(
       .where('key', '=', request.key)
       .executeTakeFirstOrThrow();
     if (existing.requestHash !== requestHash) {
-      throw new AppError('idempotency_key_reused', 'This Idempotency-Key was already used with a different request.');
+      throw new AppError(
+        'idempotency_key_reused',
+        'This Idempotency-Key was already used with a different request.',
+      );
     }
     if (existing.responseStatus === null) {
-      throw new AppError('version_conflict', 'A request with this Idempotency-Key is still being processed.', { retryAfterSeconds: 1 });
+      throw new AppError(
+        'version_conflict',
+        'A request with this Idempotency-Key is still being processed.',
+        { retryAfterSeconds: 1 },
+      );
     }
     return { status: existing.responseStatus, body: existing.responseBody as T, replayed: true };
   }

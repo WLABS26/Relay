@@ -5,12 +5,22 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
   test('a member of one workspace cannot see or mutate another workspace', async ({ page }) => {
     await signIn(page, 'Mara Lindqvist');
     const fernhill = await workspaceId(page, 'fernhill');
-    const posts = (await (await page.request.get(`/api/v1/workspaces/${fernhill}/posts`)).json()) as { posts: Array<{ id: string }> };
-    const pages = (await (await page.request.get(`/api/v1/workspaces/${fernhill}/pages`)).json()) as { pages: Array<{ id: string }> };
-    const assets = (await (await page.request.get(`/api/v1/workspaces/${fernhill}/assets?pageId=${pages.pages[0]!.id}`)).json()) as { assets: Array<{ id: string; status: string }> };
+    const posts = (await (
+      await page.request.get(`/api/v1/workspaces/${fernhill}/posts`)
+    ).json()) as { posts: Array<{ id: string }> };
+    const pages = (await (
+      await page.request.get(`/api/v1/workspaces/${fernhill}/pages`)
+    ).json()) as { pages: Array<{ id: string }> };
+    const assets = (await (
+      await page.request.get(`/api/v1/workspaces/${fernhill}/assets?pageId=${pages.pages[0]!.id}`)
+    ).json()) as { assets: Array<{ id: string; status: string }> };
     const fernhillPost = posts.posts[0]!.id;
     const fernhillAsset = assets.assets.find((a) => a.status === 'ready')!.id;
-    const signed = (await (await page.request.get(`/api/v1/workspaces/${fernhill}/assets/${fernhillAsset}/url?variant=thumbnail`)).json()) as { url: string };
+    const signed = (await (
+      await page.request.get(
+        `/api/v1/workspaces/${fernhill}/assets/${fernhillAsset}/url?variant=thumbnail`,
+      )
+    ).json()) as { url: string };
     expect(signed.url).toContain('X-Amz-Signature');
     await signOut(page);
 
@@ -48,19 +58,30 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
     const ws = await workspaceId(page, 'fernhill');
     const csrf = (await page.context().cookies()).find((c) => c.name === 'relay_csrf')!.value;
     const body = { name: 'Should not exist', timezone: 'Europe/Berlin' };
-    const noToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, { headers: { origin: 'http://localhost:3100' }, data: body });
+    const noToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, {
+      headers: { origin: 'http://localhost:3100' },
+      data: body,
+    });
     expect(noToken.status()).toBe(403);
     expect(((await noToken.json()) as { code: string }).code).toBe('csrf_failed');
-    const crossSite = await page.request.post(`/api/v1/workspaces/${ws}/pages`, { headers: { origin: 'https://evil.example', 'x-csrf-token': csrf }, data: body });
+    const crossSite = await page.request.post(`/api/v1/workspaces/${ws}/pages`, {
+      headers: { origin: 'https://evil.example', 'x-csrf-token': csrf },
+      data: body,
+    });
     expect(crossSite.status()).toBe(403);
-    const wrongToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, { headers: { origin: 'http://localhost:3100', 'x-csrf-token': 'forged' }, data: body });
+    const wrongToken = await page.request.post(`/api/v1/workspaces/${ws}/pages`, {
+      headers: { origin: 'http://localhost:3100', 'x-csrf-token': 'forged' },
+      data: body,
+    });
     expect(wrongToken.status()).toBe(403);
     // Errors use the standard envelope with a request ID.
     const envelope = (await wrongToken.json()) as Record<string, unknown>;
     expect(Object.keys(envelope).sort()).toEqual(['code', 'message', 'requestId']);
   });
 
-  test('pages are served with a nonce CSP and security headers; the session cookie is HttpOnly', async ({ page }) => {
+  test('pages are served with a nonce CSP and security headers; the session cookie is HttpOnly', async ({
+    page,
+  }) => {
     const response = await page.goto('/sign-in');
     const csp = response!.headers()['content-security-policy']!;
     expect(csp).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
@@ -74,8 +95,18 @@ test.describe('M0 gate: tenant isolation, CSRF and fail-closed auth over HTTP', 
     const cookieHeader = `relay_session=${session.value}`;
     await page.getByRole('button', { name: 'Sign out' }).click();
     await page.waitForURL(/\/sign-in/);
-    const reuse = await page.request.get('/api/v1/workspaces', { headers: { cookie: cookieHeader } });
+    const reuse = await page.request.get('/api/v1/workspaces', {
+      headers: { cookie: cookieHeader },
+    });
     expect(reuse.status()).toBe(401);
+    // API responses, errors included, are never sniffed, framed, cached or embedded cross-origin.
+    expect(reuse.headers()).toMatchObject({
+      'x-content-type-options': 'nosniff',
+      'cross-origin-resource-policy': 'same-origin',
+      'x-frame-options': 'DENY',
+      'cache-control': 'no-store',
+    });
+    expect((await reuse.json()) as unknown).toMatchObject({ code: 'unauthenticated' });
   });
 
   test('viewers are read-only in the UI and the API', async ({ page }) => {

@@ -39,7 +39,10 @@ export interface AccountRow {
   connectionGeneration: number;
 }
 
-export function toConnectedAccount(row: AccountRow, grantedScopes: readonly string[] = []): ConnectedAccount {
+export function toConnectedAccount(
+  row: AccountRow,
+  grantedScopes: readonly string[] = [],
+): ConnectedAccount {
   return {
     workspaceId: row.workspaceId,
     socialAccountId: row.id,
@@ -54,7 +57,10 @@ export function toConnectedAccount(row: AccountRow, grantedScopes: readonly stri
 }
 
 /** Publishing capabilities of an account, or null when no adapter is available. */
-export async function adapterCapabilities(ctx: ServiceContext, account: ConnectedAccount): Promise<PublishingCapabilities | null> {
+export async function adapterCapabilities(
+  ctx: ServiceContext,
+  account: ConnectedAccount,
+): Promise<PublishingCapabilities | null> {
   const adapter = ctx.registry.publishing(account.provider, account.connectionMode);
   if (adapter) return adapter.capabilities(account);
   // No adapter in this process (e.g. the web app) — derive the simulator's static profile so
@@ -66,7 +72,13 @@ export async function adapterCapabilities(ctx: ServiceContext, account: Connecte
       mode: 'simulated',
       profile,
       requiredScopes: {},
-      implemented: { 'publish.video': true, 'publish.image': true, 'publish.carousel': true, 'metrics.read': true, 'export.manual': true },
+      implemented: {
+        'publish.video': true,
+        'publish.image': true,
+        'publish.carousel': true,
+        'metrics.read': true,
+        'export.manual': true,
+      },
       programApproval: 'not_required',
       accountTypeSupported: account.accountType === SIMULATED_ACCOUNT_TYPES[account.provider],
     };
@@ -81,20 +93,39 @@ export function evaluateCapabilities(
 ): Record<CapabilityKey, Capability> {
   const now = ctx.clock.now();
   const health =
-    account.status === 'active' ? 'healthy' : account.status === 'needs_reauth' ? 'needs_reauth' : 'revoked';
+    account.status === 'active'
+      ? 'healthy'
+      : account.status === 'needs_reauth'
+        ? 'needs_reauth'
+        : 'revoked';
   const result = {} as Record<CapabilityKey, Capability>;
   for (const key of CAPABILITY_KEYS) {
     if (key === 'export.manual') {
-      result[key] = { state: 'enabled', message: 'Download the prepared file and post it yourself.', fallback: null, checkedAt: now.toISOString() };
+      result[key] = {
+        state: 'enabled',
+        message: 'Download the prepared file and post it yourself.',
+        fallback: null,
+        checkedAt: now.toISOString(),
+      };
       continue;
     }
-    const formatKey = key === 'publish.video' ? 'video' : key === 'publish.image' ? 'image' : key === 'publish.carousel' ? 'carousel' : null;
+    const formatKey =
+      key === 'publish.video'
+        ? 'video'
+        : key === 'publish.image'
+          ? 'image'
+          : key === 'publish.carousel'
+            ? 'carousel'
+            : null;
     result[key] = resolveCapability(
       {
         implemented: caps ? (caps.implemented[key] ?? false) : false,
         connectionMode: account.connectionMode,
         demoMode: ctx.config.demoMode,
-        deploymentEnabled: account.connectionMode === 'simulated' ? true : ctx.config.providers[account.provider].enabled,
+        deploymentEnabled:
+          account.connectionMode === 'simulated'
+            ? true
+            : ctx.config.providers[account.provider].enabled,
         programApproval: caps?.programApproval ?? 'not_required',
         requiredScopes: caps?.requiredScopes[key] ?? [],
         grantedScopes: account.grantedScopes,
@@ -112,7 +143,12 @@ export function evaluateCapabilities(
   return result;
 }
 
-async function snapshotCapabilities(tx: Tx, ctx: ServiceContext, workspaceId: string, account: ConnectedAccount) {
+async function snapshotCapabilities(
+  tx: Tx,
+  ctx: ServiceContext,
+  workspaceId: string,
+  account: ConnectedAccount,
+) {
   const caps = evaluateCapabilities(ctx, account, await adapterCapabilities(ctx, account));
   for (const [capability, value] of Object.entries(caps)) {
     await tx
@@ -138,16 +174,33 @@ async function snapshotCapabilities(tx: Tx, ctx: ServiceContext, workspaceId: st
   return caps;
 }
 
-export async function listConnections(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string) {
+export async function listConnections(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+) {
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'connections.view');
     const rows = await tx
       .selectFrom('socialAccounts as a')
       .innerJoin('providerGrants as g', 'g.id', 'a.grantId')
       .select([
-        'a.id', 'a.workspaceId', 'a.grantId', 'a.provider', 'a.connectionMode', 'a.providerAccountId', 'a.displayName',
-        'a.handle', 'a.accountType', 'a.simulatorProfile', 'a.status', 'a.healthReason', 'a.healthCheckedAt',
-        'a.connectionGeneration', 'a.createdAt', 'g.grantedScopes',
+        'a.id',
+        'a.workspaceId',
+        'a.grantId',
+        'a.provider',
+        'a.connectionMode',
+        'a.providerAccountId',
+        'a.displayName',
+        'a.handle',
+        'a.accountType',
+        'a.simulatorProfile',
+        'a.status',
+        'a.healthReason',
+        'a.healthCheckedAt',
+        'a.connectionGeneration',
+        'a.createdAt',
+        'g.grantedScopes',
       ])
       .orderBy('a.provider')
       .orderBy('a.displayName')
@@ -184,9 +237,18 @@ export async function listConnections(ctx: ServiceContext, user: AuthenticatedUs
 }
 
 /** Demo mode only: connect a simulated account driven by the provider simulator. */
-export async function createDemoConnection(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, rawInput: unknown, meta: RequestMeta) {
+export async function createDemoConnection(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   if (!ctx.config.demoMode || ctx.config.isProduction) {
-    throw new AppError('demo_mode_disabled', 'Simulated connections are only available in demo mode.');
+    throw new AppError(
+      'demo_mode_disabled',
+      'Simulated connections are only available in demo mode.',
+    );
   }
   const input = createDemoConnectionSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
@@ -195,16 +257,29 @@ export async function createDemoConnection(ctx: ServiceContext, user: Authentica
     const accountId = ctx.ids.next();
     await tx
       .insertInto('providerGrants')
-      .values({ id: grantId, workspaceId, provider: input.provider, connectionMode: 'simulated', grantedScopes: [], createdBy: user.userId })
+      .values({
+        id: grantId,
+        workspaceId,
+        provider: input.provider,
+        connectionMode: 'simulated',
+        grantedScopes: [],
+        createdBy: user.userId,
+      })
       .execute();
-    const handle = input.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 30) || 'demo';
+    const handle =
+      input.displayName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '')
+        .slice(0, 30) || 'demo';
     const row = {
       id: accountId,
       workspaceId,
       grantId,
       provider: input.provider,
       connectionMode: 'simulated',
-      providerAccountId: `sim-${input.provider}-${randomToken(6).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`,
+      providerAccountId: `sim-${input.provider}-${randomToken(6)
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, 'x')}`,
       displayName: input.displayName,
       handle: `@${handle}`,
       accountType: SIMULATED_ACCOUNT_TYPES[input.provider],
@@ -213,7 +288,10 @@ export async function createDemoConnection(ctx: ServiceContext, user: Authentica
       healthReason: null,
       connectionGeneration: 0,
     } satisfies AccountRow;
-    await tx.insertInto('socialAccounts').values({ ...row, createdBy: user.userId, healthCheckedAt: ctx.clock.now() }).execute();
+    await tx
+      .insertInto('socialAccounts')
+      .values({ ...row, createdBy: user.userId, healthCheckedAt: ctx.clock.now() })
+      .execute();
     const caps = await snapshotCapabilities(tx, ctx, workspaceId, toConnectedAccount(row));
     await appendAudit(tx, ctx.ids, {
       workspaceId,
@@ -224,7 +302,11 @@ export async function createDemoConnection(ctx: ServiceContext, user: Authentica
       data: { provider: input.provider, mode: 'simulated', profile: input.profile },
       requestId: meta.requestId,
     });
-    return { id: accountId, capabilities: caps, label: `${PROVIDER_LABELS[input.provider]} · ${input.displayName} (simulated)` };
+    return {
+      id: accountId,
+      capabilities: caps,
+      label: `${PROVIDER_LABELS[input.provider]} · ${input.displayName} (simulated)`,
+    };
   });
 }
 
@@ -233,16 +315,32 @@ export async function createDemoConnection(ctx: ServiceContext, user: Authentica
  * and hold every not-yet-claimed destination that targets it. In-flight work is not hidden:
  * it is reported so an operator can reconcile it.
  */
-export async function disconnectAccount(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, accountId: string, meta: RequestMeta) {
+export async function disconnectAccount(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  accountId: string,
+  meta: RequestMeta,
+) {
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'connections.manage');
     // Lock order: social account first (same as schedule and claim).
-    const account = await tx.selectFrom('socialAccounts').select(['id', 'status']).where('id', '=', accountId).forUpdate().executeTakeFirst();
+    const account = await tx
+      .selectFrom('socialAccounts')
+      .select(['id', 'status'])
+      .where('id', '=', accountId)
+      .forUpdate()
+      .executeTakeFirst();
     if (!account) throw new AppError('not_found', 'Connection not found');
     const now = ctx.clock.now();
     await tx
       .updateTable('socialAccounts')
-      .set({ status: 'disconnected', disconnectedAt: now, healthReason: 'disconnected_by_user', connectionGeneration: sql`connection_generation + 1` })
+      .set({
+        status: 'disconnected',
+        disconnectedAt: now,
+        healthReason: 'disconnected_by_user',
+        connectionGeneration: sql`connection_generation + 1`,
+      })
       .where('id', '=', accountId)
       .execute();
     const affected = await tx
@@ -257,8 +355,17 @@ export async function disconnectAccount(ctx: ServiceContext, user: Authenticated
     if (held.length) {
       await tx
         .updateTable('postDestinations')
-        .set({ state: 'blocked', stateReason: 'connection_revoked', stateChangedAt: now, version: sql`version + 1` })
-        .where('id', 'in', held.map((d) => d.id))
+        .set({
+          state: 'blocked',
+          stateReason: 'connection_revoked',
+          stateChangedAt: now,
+          version: sql`version + 1`,
+        })
+        .where(
+          'id',
+          'in',
+          held.map((d) => d.id),
+        )
         .execute();
     }
     await appendAudit(tx, ctx.ids, {
@@ -270,19 +377,40 @@ export async function disconnectAccount(ctx: ServiceContext, user: Authenticated
       data: { held: held.length, inFlight: affected.length - held.length },
       requestId: meta.requestId,
     });
-    return { held: held.length, inFlight: affected.filter((d) => d.state === 'dispatching' || d.state === 'processing').map((d) => d.id) };
+    return {
+      held: held.length,
+      inFlight: affected
+        .filter((d) => d.state === 'dispatching' || d.state === 'processing')
+        .map((d) => d.id),
+    };
   });
 }
 
-export async function addPageDestination(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string, pageId: string, rawInput: unknown, meta: RequestMeta) {
+export async function addPageDestination(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  workspaceId: string,
+  pageId: string,
+  rawInput: unknown,
+  meta: RequestMeta,
+) {
   const input = createDestinationSchema.parse(rawInput);
   return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
     authorize(member, 'page.update', pageId);
     await requirePage(tx, member, pageId);
-    const account = await tx.selectFrom('socialAccounts').selectAll().where('id', '=', input.socialAccountId).executeTakeFirst();
+    const account = await tx
+      .selectFrom('socialAccounts')
+      .selectAll()
+      .where('id', '=', input.socialAccountId)
+      .executeTakeFirst();
     if (!account) throw new AppError('not_found', 'Connection not found');
-    if (account.status !== 'active') throw new AppError('connection_unhealthy', 'Reconnect this account before adding it to a page.');
-    if (account.provider === 'twitch') throw new AppError('validation_failed', 'Twitch is a source, not a publishing destination.');
+    if (account.status !== 'active')
+      throw new AppError(
+        'connection_unhealthy',
+        'Reconnect this account before adding it to a page.',
+      );
+    if (account.provider === 'twitch')
+      throw new AppError('validation_failed', 'Twitch is a source, not a publishing destination.');
     const id = ctx.ids.next();
     try {
       await tx
@@ -293,14 +421,19 @@ export async function addPageDestination(ctx: ServiceContext, user: Authenticate
           pageId,
           socialAccountId: account.id,
           provider: account.provider,
-          label: input.label ?? `${PROVIDER_LABELS[account.provider as DestinationProviderId]} · ${account.displayName}`,
+          label:
+            input.label ??
+            `${PROVIDER_LABELS[account.provider as DestinationProviderId]} · ${account.displayName}`,
           defaultVisibility: input.defaultVisibility,
           createdBy: user.userId,
         })
         .execute();
     } catch (error) {
       if ((error as { code?: string }).code === '23505') {
-        throw new AppError('validation_failed', 'This account is already a destination of this page.');
+        throw new AppError(
+          'validation_failed',
+          'This account is already a destination of this page.',
+        );
       }
       throw error;
     }

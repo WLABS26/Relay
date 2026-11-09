@@ -2,8 +2,24 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { withTenant } from '@relay/db';
-import { allowedTypeFor, sniffContainer, validateProbe, type ProbeSummary, type ValidationFailureCode } from '@relay/domain';
-import { assetVariantKey, ffprobeVersion, ObjectTooLargeError, probeFile, renderProxy, renderThumbnail, scanIsoBmffProtection, ToolError, type MediaToolConfig } from '@relay/media';
+import {
+  allowedTypeFor,
+  sniffContainer,
+  validateProbe,
+  type ProbeSummary,
+  type ValidationFailureCode,
+} from '@relay/domain';
+import {
+  assetVariantKey,
+  ffprobeVersion,
+  ObjectTooLargeError,
+  probeFile,
+  renderProxy,
+  renderThumbnail,
+  scanIsoBmffProtection,
+  ToolError,
+  type MediaToolConfig,
+} from '@relay/media';
 import { appendAudit, SERVICE_ACTORS } from './audit';
 import type { ServiceContext } from './context';
 import { updateJobRun } from './jobs';
@@ -73,10 +89,24 @@ export async function processAssetProbe(
 ): Promise<'ready' | 'rejected' | 'skipped'> {
   const { workspaceId, assetId } = payload;
   const asset = await withTenant(ctx.db, { workspaceId }, async (tx) => {
-    const row = await tx.selectFrom('mediaAssets').selectAll().where('id', '=', assetId).executeTakeFirst();
+    const row = await tx
+      .selectFrom('mediaAssets')
+      .selectAll()
+      .where('id', '=', assetId)
+      .executeTakeFirst();
     if (!row || row.status !== 'validating') return null; // stale, duplicate or already handled
-    const session = await tx.selectFrom('uploadSessions').select(['id', 'checksumSha256']).where('assetId', '=', assetId).executeTakeFirst();
-    await updateJobRun(tx, { entityType: 'media_asset', entityId: assetId, kind: 'asset.probe', status: 'running', progress: 5 });
+    const session = await tx
+      .selectFrom('uploadSessions')
+      .select(['id', 'checksumSha256'])
+      .where('assetId', '=', assetId)
+      .executeTakeFirst();
+    await updateJobRun(tx, {
+      entityType: 'media_asset',
+      entityId: assetId,
+      kind: 'asset.probe',
+      status: 'running',
+      progress: 5,
+    });
     return { ...row, declaredChecksum: session?.checksumSha256 ?? null };
   });
   if (!asset) return 'skipped';
@@ -87,7 +117,8 @@ export async function processAssetProbe(
   const dir = await mkdtemp(path.join(scratchRoot, 'relay-media-'));
   const uploaded: string[] = [];
   try {
-    if (!type) throw new Rejection('unsupported_type', `${asset.declaredMime} is not an accepted type.`);
+    if (!type)
+      throw new Rejection('unsupported_type', `${asset.declaredMime} is not an accepted type.`);
     const input = path.join(dir, 'input');
     let download;
     try {
@@ -99,31 +130,52 @@ export async function processAssetProbe(
         maxBytes: asset.sizeBytes,
       });
     } catch (error) {
-      if (error instanceof ObjectTooLargeError) throw new Rejection('size_mismatch', 'The stored file is larger than declared.');
+      if (error instanceof ObjectTooLargeError)
+        throw new Rejection('size_mismatch', 'The stored file is larger than declared.');
       throw error;
     }
-    if (download.bytes !== asset.sizeBytes) throw new Rejection('size_mismatch', `Expected ${asset.sizeBytes} bytes, received ${download.bytes}.`);
+    if (download.bytes !== asset.sizeBytes)
+      throw new Rejection(
+        'size_mismatch',
+        `Expected ${asset.sizeBytes} bytes, received ${download.bytes}.`,
+      );
     if (asset.declaredChecksum) {
       const computed = Buffer.from(download.sha256, 'hex').toString('base64');
-      if (computed !== asset.declaredChecksum) throw new Rejection('checksum_mismatch', 'The file does not match the checksum sent with the upload.');
+      if (computed !== asset.declaredChecksum)
+        throw new Rejection(
+          'checksum_mismatch',
+          'The file does not match the checksum sent with the upload.',
+        );
     }
 
     const container = sniffContainer(download.head);
     if (!type.containers.includes(container)) {
-      throw new Rejection('mime_mismatch', `The file content (${container}) does not match the declared type ${asset.declaredMime}.`);
+      throw new Rejection(
+        'mime_mismatch',
+        `The file content (${container}) does not match the declared type ${asset.declaredMime}.`,
+      );
     }
     if (container === 'mp4' || container === 'mov') {
       const protection = await scanIsoBmffProtection(input);
-      if (protection.encrypted) throw new Rejection('encrypted_media', 'Encrypted or DRM-protected media cannot be processed.');
+      if (protection.encrypted)
+        throw new Rejection(
+          'encrypted_media',
+          'Encrypted or DRM-protected media cannot be processed.',
+        );
       // Fail closed: a file whose structure could not be fully inspected is not accepted.
-      if (!protection.complete) throw new Rejection('malformed_media', 'This file is structured in a way Relay cannot inspect safely.');
+      if (!protection.complete)
+        throw new Rejection(
+          'malformed_media',
+          'This file is structured in a way Relay cannot inspect safely.',
+        );
     }
 
     let probe: ProbeSummary;
     try {
       probe = await probeFile(cfg, input, type.demuxer);
     } catch (error) {
-      if (error instanceof ToolError) throw new Rejection('malformed_media', 'The file could not be read as valid media.');
+      if (error instanceof ToolError)
+        throw new Rejection('malformed_media', 'The file could not be read as valid media.');
       throw error;
     }
     const validation = validateProbe(type.kind, probe, {
@@ -140,25 +192,57 @@ export async function processAssetProbe(
     const rendererVersion = `${RENDERER_VERSION_PREFIX} (${version})`;
     const thumbPath = path.join(dir, 'thumbnail.jpg');
     try {
-      await renderThumbnail(cfg, { path: input, demuxer: type.demuxer, kind: type.kind, durationMs: media.durationMs, outputPath: thumbPath, maxSide: 640 });
+      await renderThumbnail(cfg, {
+        path: input,
+        demuxer: type.demuxer,
+        kind: type.kind,
+        durationMs: media.durationMs,
+        outputPath: thumbPath,
+        maxSide: 640,
+      });
     } catch (error) {
-      if (error instanceof ToolError) throw new Rejection('malformed_media', 'A preview frame could not be decoded from this file.');
+      if (error instanceof ToolError)
+        throw new Rejection(
+          'malformed_media',
+          'A preview frame could not be decoded from this file.',
+        );
       throw error;
     }
-    const variants: Array<{ kind: 'thumbnail' | 'proxy'; profile: string; file: string; mime: string; ext: string }> = [
+    const variants: Array<{
+      kind: 'thumbnail' | 'proxy';
+      profile: string;
+      file: string;
+      mime: string;
+      ext: string;
+    }> = [
       { kind: 'thumbnail', profile: 'jpg-640', file: thumbPath, mime: 'image/jpeg', ext: 'jpg' },
     ];
     if (type.kind === 'video') {
       const proxyPath = path.join(dir, 'proxy.mp4');
       try {
-        await renderProxy(cfg, { path: input, demuxer: type.demuxer, outputPath: proxyPath, maxSide: 960, maxOutputBytes: Math.max(64 * 1024 ** 2, asset.sizeBytes) });
+        await renderProxy(cfg, {
+          path: input,
+          demuxer: type.demuxer,
+          outputPath: proxyPath,
+          maxSide: 960,
+          maxOutputBytes: Math.max(64 * 1024 ** 2, asset.sizeBytes),
+        });
       } catch (error) {
-        if (error instanceof ToolError) throw new Rejection('malformed_media', 'The video could not be fully decoded.');
+        if (error instanceof ToolError)
+          throw new Rejection('malformed_media', 'The video could not be fully decoded.');
         throw error;
       }
-      variants.push({ kind: 'proxy', profile: 'h264-960', file: proxyPath, mime: 'video/mp4', ext: 'mp4' });
+      variants.push({
+        kind: 'proxy',
+        profile: 'h264-960',
+        file: proxyPath,
+        mime: 'video/mp4',
+        ext: 'mp4',
+      });
     }
-    const variantRows: Array<(typeof variants)[number] & { key: string; size: number; versionId: string | null }> = [];
+    const variantRows: Array<
+      (typeof variants)[number] & { key: string; size: number; versionId: string | null }
+    > = [];
     for (const v of variants) {
       const key = assetVariantKey(workspaceId, assetId, asset.version, v.kind, v.profile, v.ext);
       const { size } = await stat(v.file);
@@ -220,12 +304,43 @@ export async function processAssetProbe(
           .onConflict((oc) => oc.columns(['assetId', 'kind', 'profile']).doNothing())
           .execute();
       }
-      await tx.updateTable('uploadSessions').set({ reservationReleasedAt: now }).where('assetId', '=', assetId).where('reservationReleasedAt', 'is', null).execute();
-      await tx.insertInto('usageEvents').values({ id: ctx.ids.next(), workspaceId, kind: 'upload_bytes', quantity: String(asset.sizeBytes), entityType: 'media_asset', entityId: assetId }).execute();
+      await tx
+        .updateTable('uploadSessions')
+        .set({ reservationReleasedAt: now })
+        .where('assetId', '=', assetId)
+        .where('reservationReleasedAt', 'is', null)
+        .execute();
+      await tx
+        .insertInto('usageEvents')
+        .values({
+          id: ctx.ids.next(),
+          workspaceId,
+          kind: 'upload_bytes',
+          quantity: String(asset.sizeBytes),
+          entityType: 'media_asset',
+          entityId: assetId,
+        })
+        .execute();
       if (media.durationMs) {
-        await tx.insertInto('usageEvents').values({ id: ctx.ids.next(), workspaceId, kind: 'media_seconds_processed', quantity: String(media.durationMs / 1000), entityType: 'media_asset', entityId: assetId }).execute();
+        await tx
+          .insertInto('usageEvents')
+          .values({
+            id: ctx.ids.next(),
+            workspaceId,
+            kind: 'media_seconds_processed',
+            quantity: String(media.durationMs / 1000),
+            entityType: 'media_asset',
+            entityId: assetId,
+          })
+          .execute();
       }
-      await updateJobRun(tx, { entityType: 'media_asset', entityId: assetId, kind: 'asset.probe', status: 'succeeded', progress: 100 });
+      await updateJobRun(tx, {
+        entityType: 'media_asset',
+        entityId: assetId,
+        kind: 'asset.probe',
+        status: 'succeeded',
+        progress: 100,
+      });
       await appendAudit(tx, ctx.ids, {
         workspaceId,
         actor: SERVICE_ACTORS.media,
@@ -233,7 +348,13 @@ export async function processAssetProbe(
         entityType: 'media_asset',
         entityId: assetId,
         pageId: asset.pageId,
-        data: { kind: type.kind, width: media.width, height: media.height, durationMs: media.durationMs, hasAudio: media.hasAudio },
+        data: {
+          kind: type.kind,
+          width: media.width,
+          height: media.height,
+          durationMs: media.durationMs,
+          hasAudio: media.hasAudio,
+        },
         correlationId: payload.correlationId ?? null,
       });
     });
@@ -243,24 +364,46 @@ export async function processAssetProbe(
       error instanceof Rejection
         ? error
         : attempt.number >= attempt.max
-          ? new Rejection('processing_failed', 'Relay could not process this file after several attempts.')
+          ? new Rejection(
+              'processing_failed',
+              'Relay could not process this file after several attempts.',
+            )
           : null;
     if (!rejection) {
-      ctx.logger.warn({ assetId, err: safeError(error), attempt: attempt.number }, 'asset.probe failed; will retry');
+      ctx.logger.warn(
+        { assetId, err: safeError(error), attempt: attempt.number },
+        'asset.probe failed; will retry',
+      );
       throw error; // let the queue retry with backoff
     }
     await withTenant(ctx.db, { workspaceId }, async (tx) => {
       const now = ctx.clock.now();
       const updated = await tx
         .updateTable('mediaAssets')
-        .set({ status: 'rejected', rejectionCode: rejection.code, rejectionDetail: rejection.detail.slice(0, 500) })
+        .set({
+          status: 'rejected',
+          rejectionCode: rejection.code,
+          rejectionDetail: rejection.detail.slice(0, 500),
+        })
         .where('id', '=', assetId)
         .where('status', '=', 'validating')
         .returning('id')
         .executeTakeFirst();
       if (!updated) return;
-      await tx.updateTable('uploadSessions').set({ reservationReleasedAt: now }).where('assetId', '=', assetId).where('reservationReleasedAt', 'is', null).execute();
-      await updateJobRun(tx, { entityType: 'media_asset', entityId: assetId, kind: 'asset.probe', status: 'failed', errorCode: rejection.code, errorMessage: rejection.detail });
+      await tx
+        .updateTable('uploadSessions')
+        .set({ reservationReleasedAt: now })
+        .where('assetId', '=', assetId)
+        .where('reservationReleasedAt', 'is', null)
+        .execute();
+      await updateJobRun(tx, {
+        entityType: 'media_asset',
+        entityId: assetId,
+        kind: 'asset.probe',
+        status: 'failed',
+        errorCode: rejection.code,
+        errorMessage: rejection.detail,
+      });
       await appendAudit(tx, ctx.ids, {
         workspaceId,
         actor: SERVICE_ACTORS.media,

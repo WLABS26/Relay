@@ -9,7 +9,11 @@ import { DemoSignIn } from '@/components/auth/DemoSignIn';
 export const metadata: Metadata = { title: 'Sign in' };
 export const dynamic = 'force-dynamic';
 
-export default async function SignInPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const params = await searchParams;
   const returnTo = safeReturnTo(params.returnTo);
   if (await getSession()) redirect(returnTo);
@@ -22,19 +26,31 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         <div className="r-stack" style={{ maxWidth: 440 }}>
           <h1 style={{ fontSize: 'var(--text-2xl)' }}>Plan, approve and publish with evidence.</h1>
           <p className="r-secondary">
-            Upload finished content, schedule it into each page’s calendar with explicit approvals, and publish through connected accounts. Every step is recorded.
+            Upload finished content, schedule it into each page’s calendar with explicit approvals,
+            and publish through connected accounts. Every step is recorded.
           </p>
         </div>
-        <p className="r-xs r-muted">Relay Design System v1.1 · Neutral Edition (stand-in marks — kit not supplied)</p>
+        <p className="r-xs r-muted">
+          Relay Design System v1.1 · Neutral Edition (stand-in marks — kit not supplied)
+        </p>
       </section>
       <main id="main" className="auth-panel">
         <div className="r-stack-sm">
           <h2 style={{ fontSize: 'var(--text-xl)' }}>Sign in</h2>
-          <p className="r-muted r-small">Signing in to Relay is separate from connecting social accounts.</p>
+          <p className="r-muted r-small">
+            Signing in to Relay is separate from connecting social accounts.
+          </p>
         </div>
-        {params.error ? <Banner tone="danger" title="Sign-in failed">{params.error}</Banner> : null}
+        {params.error ? (
+          <Banner tone="danger" title="Sign-in failed">
+            {params.error}
+          </Banner>
+        ) : null}
         {ctx.config.oidc ? (
-          <a className={linkButtonClass('primary', 'r-button--block')} href={`/api/auth/oidc/start?returnTo=${encodeURIComponent(returnTo)}`}>
+          <a
+            className={linkButtonClass('primary', 'r-button--block')}
+            href={`/api/auth/oidc/start?returnTo=${encodeURIComponent(returnTo)}`}
+          >
             Continue with single sign-on
           </a>
         ) : null}

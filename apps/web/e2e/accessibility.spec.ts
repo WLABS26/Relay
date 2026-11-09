@@ -22,12 +22,16 @@ test.describe('keyboard and theme', () => {
     await signIn(page, 'Mara Lindqvist');
     await page.keyboard.press('Tab');
     await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused();
-    await expect(page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: 'Inbox' })).toHaveAttribute('aria-current', 'page');
+    await expect(
+      page.getByRole('navigation', { name: 'Workspace' }).getByRole('link', { name: 'Inbox' }),
+    ).toHaveAttribute('aria-current', 'page');
   });
 
   test('the dark theme applies to the same workflow screens', async ({ page, context }) => {
     await signIn(page, 'Mara Lindqvist');
-    await context.addCookies([{ name: 'relay_theme', value: 'dark', url: 'http://localhost:3100' }]);
+    await context.addCookies([
+      { name: 'relay_theme', value: 'dark', url: 'http://localhost:3100' },
+    ]);
     for (const path of ['/w/fernhill/calendar', '/w/fernhill/posts', '/w/fernhill/results']) {
       await page.goto(path);
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');

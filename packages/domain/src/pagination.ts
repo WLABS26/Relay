@@ -30,7 +30,9 @@ export function decodeCursor(raw: string): Cursor {
   } catch {
     // fall through
   }
-  throw new AppError('validation_failed', 'Invalid pagination cursor', { fieldErrors: { cursor: ['Invalid cursor'] } });
+  throw new AppError('validation_failed', 'Invalid pagination cursor', {
+    fieldErrors: { cursor: ['Invalid cursor'] },
+  });
 }
 
 export const pageQuerySchema = z.object({
