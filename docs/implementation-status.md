@@ -156,21 +156,38 @@ None of these can be completed from code; each needs a separate operator action.
 
 ## Commands verified
 
-All on 2026-11-09 in a Linux container (Docker 29.9, Node 22.23.4, pnpm 10.28.0).
+Run on 2026-11-09 from a **clean clone of commit `dfadfd3`** (Linux container, Docker 29.9,
+Node 22.23.4, pnpm 10.28.0). The clone used its own Compose project
+(`COMPOSE_PROJECT_NAME=relayfresh`, alternate host ports in `.env`) so every run started
+from empty volumes without touching other local data; otherwise the commands are exactly
+as documented.
 
-| Command                                                                 | Result                                                       |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `pnpm install --frozen-lockfile`                                        | ok                                                           |
-| `cp .env.example .env`                                                  | ok                                                           |
-| `pnpm infra:up`                                                         | Postgres and S3 healthy; bucket provisioned                  |
-| `pnpm db:migrate`                                                       | 11 migrations, Graphile Worker schema revision 20            |
-| `pnpm db:types:check`                                                   | generated types match the schema                             |
-| `pnpm fixtures:generate`                                                | 12 deterministic fixtures (identical hashes on regeneration) |
-| `pnpm db:seed`                                                          | two tenants seeded through the real services                 |
-| `pnpm dev` / `pnpm worker:dev`                                          | web on :3000, worker with both pools and health on :3101     |
-| `pnpm test` / `pnpm test:integration` / `pnpm test:e2e`                 | see test totals                                              |
-| `pnpm lint` / `pnpm typecheck` / `pnpm format:check`                    | clean                                                        |
-| `docker build -f infra/docker/worker.Dockerfile .` and `web.Dockerfile` | built; migrations from empty, E2E 14/14 against the images   |
+| Command                          | Result                                                                                                   |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile` | ok (lockfile-exact)                                                                                      |
+| `cp .env.example .env`           | ok                                                                                                       |
+| `pnpm infra:up`                  | Postgres and S3 healthy; bucket provisioned                                                              |
+| `pnpm db:migrate`                | 11 applied from empty; Graphile Worker schema revision 20                                                |
+| `pnpm db:types:check`            | generated types are up to date                                                                           |
+| `pnpm fixtures:generate`         | 12 synthetic files (valid and hostile) in 11 s                                                           |
+| `pnpm db:seed`                   | Fernhill (3 pages, 12 posts) and Kestrel (1 page) in 13.6 s                                              |
+| `pnpm dev` + `pnpm worker:dev`   | both ready; demo sign-in 200; Fernhill pages 200; Kestrel 404 for a Fernhill-only user; no errors logged |
+| `pnpm typecheck`                 | clean (10 packages)                                                                                      |
+| `pnpm lint`                      | clean, zero warnings; source check passed                                                                |
+| `pnpm format:check`              | clean                                                                                                    |
+| `pnpm test`                      | 203 passed                                                                                               |
+| `pnpm test:integration`          | 51 passed                                                                                                |
+| `pnpm test:e2e`                  | production build, then 14 passed                                                                         |
+
+Container images (built from the working tree at the same commit):
+
+| Command                                                    | Result                                                                 |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `docker build -f infra/docker/worker.Dockerfile .`         | built (Ubuntu 24.04, FFmpeg 6.1.1, Node 22.23.4, uid 10001)            |
+| `docker build -f infra/docker/web.Dockerfile .`            | built (Next.js standalone, uid 1000); builds with an empty environment |
+| `docker run … relay-worker node dist/migrate.js`           | 11 migrations applied to an empty database                             |
+| E2E against both images (read-only root, no capabilities)  | 14 passed                                                              |
+| Upload suite with FFmpeg executing inside the worker image | 16 passed (negative control fails as expected)                         |
 
 ## Next runnable task
 
