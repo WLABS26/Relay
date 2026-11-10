@@ -7,7 +7,7 @@ live on Vercel:
 | ------------------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Web app** (Next.js)                                                    | Yes                                                     | Vercel project, root directory `apps/web`                                                                               |
 | **Worker** (Graphile Worker + FFmpeg; long-running, listens to Postgres) | No: Vercel functions are short-lived and have no FFmpeg | Any container host: Render, Railway, Fly.io, Cloud Run (min 1 instance), a VPS. Image: `infra/docker/worker.Dockerfile` |
-| **PostgreSQL 16**                                                        | Not on Vercel itself                                    | Neon (offered inside Vercel under _Storage_), Supabase, RDS, Cloud SQL                                                  |
+| **PostgreSQL 16 or newer**                                               | Not on Vercel itself                                    | Neon (offered inside Vercel under _Storage_; creates version 18 by default), Supabase, RDS, Cloud SQL                   |
 | **Object storage** (S3 API with versioning)                              | Not Vercel Blob (different API, no versioning)          | AWS S3, or another store with the S3 API, object versioning _and_ bucket CORS                                           |
 
 Without the worker, uploads never finish validating and nothing publishes, so all four are
@@ -53,11 +53,17 @@ The first value is `RELAY_SESSION_SECRET`. The second, which starts with `k1:`, 
 
 ### 2. Database (Neon, from inside Vercel)
 
-Vercel → your Relay project → **Storage** → **Create Database** → **Neon** → keep the defaults
-→ connect it to the project for all environments. This adds `DATABASE_URL` and
-`DATABASE_URL_UNPOOLED` to the project's environment variables. Open Settings → Environment
-Variables, reveal `DATABASE_URL_UNPOOLED` and copy its value somewhere safe: the worker needs it
-in step 5. Do not open the SQL editor; the worker creates the roles and tables.
+Vercel → your Relay project → **Storage** → create a database from the Marketplace and choose
+**Neon** (Neon calls this its Vercel-Managed or "Postgres Native" integration; pick _Create New
+Neon Account_ rather than linking an existing one). Keep the region and plan defaults and leave
+the optional Auth and Realtime services off. Then **Connect Project**: select the Relay project
+and all three environments, leave _Create database branch for deployment_ **unchecked**, and
+connect. This adds `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) to the project's
+environment variables, plus `PG*` and legacy `POSTGRES_*` variables that Relay ignores. Copy the
+direct connection string (`DATABASE_URL_UNPOOLED`, shown on the Storage tab and under Settings →
+Environment Variables) somewhere safe: the worker needs it in step 5. Do not open the SQL
+editor; the worker creates the roles and tables. The database is created on Neon's current
+default version (PostgreSQL 18); Relay runs on 16 or newer and its tests run against 16 and 18.
 
 ### 3. File storage (AWS S3)
 
@@ -135,9 +141,10 @@ because the worker creates the tables.
 
 **Render:** Dashboard → **New** → **Background Worker** → connect GitHub and pick
 `WLABS26/Relay` → Language **Docker** → _Dockerfile Path_ `./infra/docker/worker.Dockerfile`
-(build context stays the repository root) → instance type _Starter_ is enough for the demo
-data → **Environment Variables**: the same ten rows as step 4 plus the four below → create. The
-first build takes several minutes because the image contains FFmpeg.
+(build context stays the repository root) → _Compute_: the smallest plan, `0.5c-512mb` (Render's
+former "Starter", about 7 USD per month; background workers have no free plan), is enough for the
+demo data → **Environment Variables**: the same ten rows as step 4 plus the four below → create.
+The first build takes several minutes because the image contains FFmpeg.
 
 | Variable                   | Value                                                  |
 | -------------------------- | ------------------------------------------------------ |
@@ -146,9 +153,10 @@ first build takes several minutes because the image contains FFmpeg.
 | `RELAY_AUTO_SEED`          | `true`                                                 |
 | `RELAY_WORKER_HEALTH_HOST` | `0.0.0.0`                                              |
 
-**Railway instead:** New Project → Deploy from GitHub repo → `WLABS26/Relay` → Variables: the
-same rows plus `RAILWAY_DOCKERFILE_PATH=infra/docker/worker.Dockerfile` → deploy. The worker
-needs no public address.
+**Railway instead:** New Project → Deploy from GitHub repo → `WLABS26/Relay` → _Add variables_
+(before the first build): the same rows plus `RAILWAY_DOCKERFILE_PATH=/infra/docker/worker.Dockerfile`
+(or set _Dockerfile Path_ under Settings → Build Configuration) → deploy. The worker needs no
+public address, so skip _Generate Domain_.
 
 On its first start the worker logs `created role relay_app`, `migrations: 11 applied`,
 `bucket …: versioning on, CORS allows …`, the seed steps and finally

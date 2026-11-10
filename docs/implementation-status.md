@@ -9,7 +9,7 @@ resuming; do not re-scaffold completed work.
 - **Last updated:** 2026-11-10 (hosted-staging simplification)
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
 - **Try it:** [`docs/testing-guide.md`](testing-guide.md) (GitHub Codespaces via `.devcontainer/`, or locally)
-- **Published:** pushed to GitHub on 2026-11-10; CI run [42786822356](https://github.com/WLABS26/Relay/actions/runs/42786822356) on `4c5f4fa` passed all three jobs (lint/types/unit, integration + end-to-end on a clean runner, container images). The repository is **public**. Hosted staging is prepared as a paste-the-variables flow (one Neon login, a worker that creates roles, migrates, prepares the bucket and seeds itself): [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md). Deploying it is the owner's action; the Vercel web project exists, database, bucket and worker are pending.
+- **Published:** pushed to GitHub on 2026-11-10; CI run [42799618524](https://github.com/WLABS26/Relay/actions/runs/42799618524) on `a86c0e3` passed all jobs (lint/types/unit, integration + end-to-end on a clean runner, container images); the integration job now also runs on PostgreSQL 18. The repository is **public**. Hosted staging is prepared as a paste-the-variables flow (one Neon login, a worker that creates roles, migrates, prepares the bucket and seeds itself): [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md). Deploying it is the owner's action; the Vercel web project exists, database, bucket and worker are pending.
 - **Next milestone:** M2 · Source to clip (see [Next runnable task](#next-runnable-task))
 
 > Every connection in this build is **simulated**. A simulator success demonstrates workflow
@@ -163,6 +163,7 @@ None of these can be completed from code; each needs a separate operator action.
 - The first CI run on GitHub failed in the end-to-end gate between about 07:00 and 11:00 Berlin time: the seed had placed a sample post within the 2-hour minimum gap of \"now\" on the account the gate schedules. Fixed in the seed (`5c3346f`); verified locally at that hour and by CI.
 - Vercel can host only the web app; the worker, PostgreSQL and object storage need other hosts, and the Vercel connector available to this session may not create projects (403), so the project is created by the owner.
 - Single-login database mode (`DATABASE_URL` alone, pools `SET ROLE`) and the worker's automatic bootstrap (`RELAY_AUTO_MIGRATE`, `RELAY_AUTO_SEED`) are **staging only** and refused in production. The mode needs the direct database host; pooler addresses are refused.
+- Relay requires PostgreSQL 16 or newer (role grants with the SET option). Local development and the images pin 16.6 (ADR-009); Neon creates 18 by default and the integration suite is verified on both.
 - The demo seed was not idempotent before 2026-11-10 (its presence check ran in a scope where RLS hides memberships); fixed and covered by `single-login.test.ts`, which seeds twice.
 
 ## Commands verified
@@ -207,6 +208,8 @@ Hosted-staging bootstrap, verified 2026-11-10 on a **clean PostgreSQL 16 contain
 | `node dist/bootstrap.js --seed` (first start)           | roles created and granted with the SET option, 11 migrations, bucket created with versioning and CORS, 2 workspaces / 13 posts / 8 assets seeded; 29 s |
 | `node dist/main.js` with `RELAY_AUTO_MIGRATE/SEED=true` | bootstrap found nothing to do in about 1 s (`seeded:false`), both pools started, `/readyz` ok, queued jobs worked, clean exit on SIGTERM               |
 | `pnpm db:seed` on an already seeded database            | `demo data already present`, 0.1 s                                                                                                                     |
+
+The same two bootstrap runs and the full integration suite were repeated on **PostgreSQL 18.6** (`postgres:18-alpine`, the version a Neon database created from Vercel gets by default): 60 integration tests passed, the clean-cluster bootstrap seeded in 24 s, the worker restart found nothing to do and worked 47 queued jobs. CI now runs the integration job on 16 and 18 (`RELAY_POSTGRES_IMAGE`).
 
 ## Next runnable task
 

@@ -13,7 +13,9 @@ name: relay
 services:
   postgres:
     # PostgreSQL 16.6 (supported until Nov 2028). See docs/architecture/decisions.md (ADR-009).
-    image: postgres:16.6-alpine@sha256:1d04b9ba1d4996401f2552b51beda8187f175c0645c091e4781134fc9c9a3eef
+    # CI also runs the integration suite on PostgreSQL 18 (what Neon creates by default) by
+    # setting RELAY_POSTGRES_IMAGE; local development keeps the pinned 16.6 image.
+    image: ${RELAY_POSTGRES_IMAGE:-postgres:16.6-alpine@sha256:1d04b9ba1d4996401f2552b51beda8187f175c0645c091e4781134fc9c9a3eef}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${RELAY_PG_SUPERUSER_PASSWORD:-relay-dev-superuser}

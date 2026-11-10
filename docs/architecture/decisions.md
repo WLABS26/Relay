@@ -92,7 +92,9 @@ works by configuration.
 ## ADR-009 · PostgreSQL 16.6
 
 PostgreSQL 16 supports every feature used (forced RLS, `DROP DATABASE … WITH (FORCE)`,
-SECURITY DEFINER with pinned search paths). The image is digest-pinned in Compose.
+SECURITY DEFINER with pinned search paths, role grants with the `SET` option). The image is
+digest-pinned in Compose. 16 is the minimum, not a ceiling: hosted staging on Neon gets
+PostgreSQL 18 by default, so CI runs the integration suite on 16 and 18.
 
 ## ADR-010 · TypeScript 5.9
 
