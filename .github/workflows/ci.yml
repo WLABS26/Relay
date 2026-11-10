@@ -14,9 +14,11 @@ on:
 permissions:
   contents: read
 
+# Superseded pushes to a branch or pull request cancel their earlier run; a run on main is
+# never cancelled, so every commit on main keeps its own complete verification.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CI: 'true'
