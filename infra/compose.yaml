@@ -20,6 +20,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${RELAY_PG_SUPERUSER_PASSWORD:-relay-dev-superuser}
       POSTGRES_DB: postgres
+      # The 16 image's default. The 18+ images store data under a version-specific directory
+      # and refuse a volume mounted at this path unless PGDATA names it explicitly.
+      PGDATA: /var/lib/postgresql/data
       RELAY_MIGRATOR_PASSWORD: ${RELAY_MIGRATOR_PASSWORD:-relay-dev-migrator}
       RELAY_APP_PASSWORD: ${RELAY_APP_PASSWORD:-relay-dev-app}
       RELAY_WORKER_PASSWORD: ${RELAY_WORKER_PASSWORD:-relay-dev-worker}
