@@ -13,7 +13,7 @@
     "node": ">=22.18.0 <23"
   },
   "scripts": {
-    "infra:up": "docker compose -f infra/compose.yaml up -d --wait && docker compose -f infra/compose.yaml wait s3-provision",
+    "infra:up": "node scripts/infra-up.mjs",
     "infra:down": "docker compose -f infra/compose.yaml down",
     "infra:reset": "docker compose -f infra/compose.yaml down -v",
     "infra:logs": "docker compose -f infra/compose.yaml logs -f",
