@@ -505,17 +505,16 @@ export async function seedDemo(
     clock.set(realNow);
 
     // ---- A week of finished posts on the calendar (marketer flow) ------------------------
+    // The Fernhill Coffee YouTube account is deliberately left without future reservations:
+    // the guided tour and the end-to-end gate schedule a post there "as soon as possible",
+    // which the pacing rules (2 h minimum gap, daily cap) must not refuse at any time of day.
     log('scheduling a week of sample posts…');
     const week = [
-      { title: 'Sample · Espresso dial-in', assets: [landscape], dest: [coffeeYt] },
+      { title: 'Sample · Espresso dial-in', assets: [landscape], dest: [coffeeIg] },
       { title: 'Sample · Latte art carousel', assets: [portrait, square, wide], dest: [coffeeIg] },
-      {
-        title: 'Sample · Single-origin spotlight',
-        assets: [video],
-        dest: [coffeeYt, coffeeIg, coffeeFb],
-      },
+      { title: 'Sample · Single-origin spotlight', assets: [video], dest: [coffeeIg, coffeeFb] },
       { title: 'Sample · Barista Q&A', assets: [video], dest: [coffeeIg] },
-      { title: 'Sample · Weekend brew guide', assets: [video], dest: [coffeeYt, coffeeFb] },
+      { title: 'Sample · Weekend brew guide', assets: [video], dest: [coffeeFb] },
     ];
     for (const w of week) {
       const p = await approvedPost(c, users.priya, fernhill.id, {
