@@ -130,6 +130,7 @@ writes the change, an audit event and any job in one transaction, and returns.
 - [Provider matrix](docs/providers/matrix.md)
 - [Worker task catalog](docs/worker-tasks.md)
 - [Operations runbook](docs/runbooks/operations.md): health, jobs, recovery, media cleanup, demo → test account
+- [Hosted staging](docs/runbooks/vercel-staging.md): web on Vercel; worker, PostgreSQL and S3 elsewhere
 - [Onboarding](docs/onboarding.md): conventions and how to extend Relay
 - [Build specification](docs/RELAY_BUILD_SPEC.md)
 

@@ -1,0 +1,41 @@
+# Run database migrations against a hosted environment. Started by hand only (spec: migrations
+# on shared databases are an explicit operator action), and only with the secret that the
+# chosen GitHub Environment holds. Create the Environment (Settings → Environments), add the
+# secret DATABASE_URL_MIGRATOR (the relay_migrator role, direct non-pooled host) and, if you
+# want a second pair of eyes, required reviewers.
+name: Migrate database
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment holding DATABASE_URL_MIGRATOR
+        type: environment
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: migrate-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Apply migrations to ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply migrations (checksummed, advisory-locked; refuses edited history)
+        env:
+          RELAY_SKIP_DOTENV: 'true'
+          DATABASE_URL_MIGRATOR: ${{ secrets.DATABASE_URL_MIGRATOR }}
+        run: pnpm db:migrate
