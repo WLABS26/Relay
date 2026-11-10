@@ -65,9 +65,14 @@ const envSchema = z.object({
   RELAY_SESSION_ABSOLUTE_TTL_SECONDS: intFromEnv(300, 60 * 60 * 24 * 90).default(60 * 60 * 24 * 14),
   RELAY_SESSION_IDLE_TTL_SECONDS: intFromEnv(300, 60 * 60 * 24 * 30).default(60 * 60 * 24),
 
-  DATABASE_URL_APP: z.string().min(1),
-  DATABASE_URL_WORKER: z.string().min(1),
+  // Separate least-privilege logins (local development, production)...
+  DATABASE_URL_APP: optionalString,
+  DATABASE_URL_WORKER: optionalString,
   DATABASE_URL_MIGRATOR: optionalString,
+  // ...or ONE login for hosted staging (what Neon's Vercel integration injects): each pool
+  // then runs SET ROLE relay_app / relay_worker itself. Refused in production.
+  DATABASE_URL: optionalString,
+  DATABASE_URL_UNPOOLED: optionalString,
   RELAY_DB_POOL_MAX: intFromEnv(1, 200).default(10),
 
   // Application sign-in (production uses OIDC; demo sign-in only outside production)
@@ -130,6 +135,9 @@ const envSchema = z.object({
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
   RELAY_PUBLISH_KILL_SWITCH: boolFromEnv.default(false),
+  // Hosted staging only: the worker migrates and seeds the database when it starts.
+  RELAY_AUTO_MIGRATE: boolFromEnv.default(false),
+  RELAY_AUTO_SEED: boolFromEnv.default(false),
   RELAY_SCHEDULER_LATE_GRACE_SECONDS: intFromEnv(0, 60 * 60 * 24).default(15 * 60),
   RELAY_TELEMETRY_ENDPOINT: optionalString,
 
@@ -167,6 +175,8 @@ export interface RelayConfig {
     workerUrl: string;
     migratorUrl: string | undefined;
     poolMax: number;
+    /** One login for every pool; pools assume relay_app / relay_worker with SET ROLE. */
+    singleLogin: boolean;
   };
   oidc: {
     issuer: string;
@@ -224,6 +234,8 @@ export interface RelayConfig {
   ops: {
     logLevel: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
     publishKillSwitch: boolean;
+    autoMigrate: boolean;
+    autoSeed: boolean;
     lateGraceSeconds: number;
     telemetryEndpoint: string | undefined;
   };
@@ -282,6 +294,31 @@ function parseKeyring(raw: string | undefined, problems: string[]): KeyringEntry
   return entries;
 }
 
+/**
+ * Pin TLS verification. pg treats sslmode=prefer|require|verify-ca as verify-full today and
+ * warns on every start that its next major version will weaken them to libpq semantics. Spelling
+ * out verify-full keeps certificate and hostname verification independent of the driver version
+ * and keeps the logs quiet. Only the parameter value is touched; an explicit uselibpqcompat=true
+ * is the operator's choice and is left alone.
+ */
+function pinSslMode<T extends string | undefined>(url: T): T {
+  if (!url || /[?&]uselibpqcompat=true(?=&|$)/.test(url)) return url;
+  return url.replace(
+    /([?&])sslmode=(?:prefer|require|verify-ca)(?=&|$)/,
+    '$1sslmode=verify-full',
+  ) as T;
+}
+
+/** Hostnames and parameters that providers use for their transaction poolers. */
+function looksPooled(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return /pooler/i.test(u.hostname) || u.searchParams.get('pgbouncer') === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function containsDevSecret(value: string | undefined): boolean {
   if (!value) return false;
   return KNOWN_DEV_SECRETS.some((secret) => value.includes(secret));
@@ -300,6 +337,30 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
 
   const env: DeploymentEnv = e.RELAY_ENV ?? (e.NODE_ENV === 'production' ? 'production' : 'local');
   const isProduction = env === 'production';
+
+  // Database logins: either both per-role URLs, or DATABASE_URL alone (single-login mode).
+  // Single-login pools assume their role with SET ROLE, which is session state that transaction
+  // poolers (PgBouncer, Neon's "-pooler" host) do not preserve, so every pool uses the direct
+  // host: DATABASE_URL_UNPOOLED when the provider supplies one.
+  const singleLogin = !e.DATABASE_URL_APP && !e.DATABASE_URL_WORKER && Boolean(e.DATABASE_URL);
+  const directUrl = e.DATABASE_URL_UNPOOLED ?? e.DATABASE_URL;
+  const appUrl = e.DATABASE_URL_APP ?? directUrl;
+  const workerUrl = e.DATABASE_URL_WORKER ?? directUrl;
+  const migratorUrl = e.DATABASE_URL_MIGRATOR ?? (singleLogin ? directUrl : undefined);
+  if (singleLogin && directUrl && looksPooled(directUrl)) {
+    problems.push(
+      'DATABASE_URL points at a connection pooler, which drops SET ROLE between transactions: set DATABASE_URL_UNPOOLED to the direct connection string (Neon calls it "unpooled")',
+    );
+  }
+  if (!appUrl || !workerUrl) {
+    problems.push(
+      'Database: set DATABASE_URL_APP and DATABASE_URL_WORKER (separate least-privilege logins), or DATABASE_URL alone for a single-login staging database',
+    );
+  } else if (!singleLogin && (!e.DATABASE_URL_APP || !e.DATABASE_URL_WORKER)) {
+    problems.push(
+      'DATABASE_URL_APP and DATABASE_URL_WORKER must be set together; a pool must never fall back to the DATABASE_URL login without assuming its role',
+    );
+  }
   const publicUrl = new URL(e.RELAY_PUBLIC_URL);
   const secureCookies = publicUrl.protocol === 'https:';
 
@@ -362,6 +423,8 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
       ['DATABASE_URL_APP', e.DATABASE_URL_APP],
       ['DATABASE_URL_WORKER', e.DATABASE_URL_WORKER],
       ['DATABASE_URL_MIGRATOR', e.DATABASE_URL_MIGRATOR],
+      ['DATABASE_URL', e.DATABASE_URL],
+      ['DATABASE_URL_UNPOOLED', e.DATABASE_URL_UNPOOLED],
       ['S3_ACCESS_KEY_ID', e.S3_ACCESS_KEY_ID],
       ['S3_SECRET_ACCESS_KEY', e.S3_SECRET_ACCESS_KEY],
       ['RELAY_ENCRYPTION_KEYS', e.RELAY_ENCRYPTION_KEYS],
@@ -370,6 +433,16 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
     }
     if (e.RELAY_ENCRYPTION_PROVIDER !== 'kms') {
       problems.push('RELAY_ENCRYPTION_PROVIDER must be "kms" in production');
+    }
+    if (singleLogin) {
+      problems.push(
+        'DATABASE_URL single-login mode is for staging: production requires DATABASE_URL_APP and DATABASE_URL_WORKER with separate least-privilege roles',
+      );
+    }
+    if (e.RELAY_AUTO_MIGRATE || e.RELAY_AUTO_SEED) {
+      problems.push(
+        'RELAY_AUTO_MIGRATE and RELAY_AUTO_SEED are refused in production (migrations are an operator action)',
+      );
     }
     if (!oidcConfigured) {
       problems.push('OIDC sign-in (RELAY_OIDC_*) must be configured in production');
@@ -400,10 +473,11 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
       idleTtlSeconds: e.RELAY_SESSION_IDLE_TTL_SECONDS,
     },
     database: {
-      appUrl: e.DATABASE_URL_APP,
-      workerUrl: e.DATABASE_URL_WORKER,
-      migratorUrl: e.DATABASE_URL_MIGRATOR,
+      appUrl: pinSslMode(appUrl as string),
+      workerUrl: pinSslMode(workerUrl as string),
+      migratorUrl: pinSslMode(migratorUrl),
       poolMax: e.RELAY_DB_POOL_MAX,
+      singleLogin,
     },
     oidc: oidcConfigured
       ? {
@@ -465,6 +539,8 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
     ops: {
       logLevel: e.RELAY_LOG_LEVEL,
       publishKillSwitch: e.RELAY_PUBLISH_KILL_SWITCH,
+      autoMigrate: e.RELAY_AUTO_MIGRATE,
+      autoSeed: e.RELAY_AUTO_SEED,
       lateGraceSeconds: e.RELAY_SCHEDULER_LATE_GRACE_SECONDS,
       telemetryEndpoint: e.RELAY_TELEMETRY_ENDPOINT,
     },

@@ -6,10 +6,10 @@ resuming; do not re-scaffold completed work.
 
 - **Branch:** `main`; GitHub [`WLABS26/Relay`](https://github.com/WLABS26/Relay) (the repository is created by the owner; this
   session can only push to an existing one). CI: `.github/workflows/ci.yml`.
-- **Last updated:** 2026-11-10
+- **Last updated:** 2026-11-10 (hosted-staging simplification)
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
 - **Try it:** [`docs/testing-guide.md`](testing-guide.md) (GitHub Codespaces via `.devcontainer/`, or locally)
-- **Published:** pushed to GitHub on 2026-11-10; CI run [42786822356](https://github.com/WLABS26/Relay/actions/runs/42786822356) on `4c5f4fa` passed all three jobs (lint/types/unit, integration + end-to-end on a clean runner, container images). The repository is **public**. Hosted staging is prepared but not deployed: see [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md).
+- **Published:** pushed to GitHub on 2026-11-10; CI run [42786822356](https://github.com/WLABS26/Relay/actions/runs/42786822356) on `4c5f4fa` passed all three jobs (lint/types/unit, integration + end-to-end on a clean runner, container images). The repository is **public**. Hosted staging is prepared as a paste-the-variables flow (one Neon login, a worker that creates roles, migrates, prepares the bucket and seeds itself): [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md). Deploying it is the owner's action; the Vercel web project exists, database, bucket and worker are pending.
 - **Next milestone:** M2 · Source to clip (see [Next runnable task](#next-runnable-task))
 
 > Every connection in this build is **simulated**. A simulator success demonstrates workflow
@@ -101,8 +101,8 @@ provider write; repeated 429s give up without dispatching; rights revoked after 
 
 | Suite                                       | Command                                                        | Result                |
 | ------------------------------------------- | -------------------------------------------------------------- | --------------------- |
-| Unit                                        | `pnpm test`                                                    | 203 passed (17 files) |
-| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 54 passed (6 files)   |
+| Unit                                        | `pnpm test`                                                    | 214 passed (18 files) |
+| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 60 passed (7 files)   |
 | End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 16 passed             |
 | E2E against container images                | `E2E_BASE_URL=… pnpm --filter @relay/web exec playwright test` | 14 passed             |
 | Uploads with FFmpeg inside the worker image | uploads suite with image-backed `FFPROBE_PATH`/`FFMPEG_PATH`   | 16 passed             |
@@ -162,6 +162,8 @@ None of these can be completed from code; each needs a separate operator action.
 - The worker image is about 1 GB, mostly Ubuntu's FFmpeg codec libraries.
 - The first CI run on GitHub failed in the end-to-end gate between about 07:00 and 11:00 Berlin time: the seed had placed a sample post within the 2-hour minimum gap of \"now\" on the account the gate schedules. Fixed in the seed (`5c3346f`); verified locally at that hour and by CI.
 - Vercel can host only the web app; the worker, PostgreSQL and object storage need other hosts, and the Vercel connector available to this session may not create projects (403), so the project is created by the owner.
+- Single-login database mode (`DATABASE_URL` alone, pools `SET ROLE`) and the worker's automatic bootstrap (`RELAY_AUTO_MIGRATE`, `RELAY_AUTO_SEED`) are **staging only** and refused in production. The mode needs the direct database host; pooler addresses are refused.
+- The demo seed was not idempotent before 2026-11-10 (its presence check ran in a scope where RLS hides memberships); fixed and covered by `single-login.test.ts`, which seeds twice.
 
 ## Commands verified
 
@@ -198,7 +200,18 @@ Container images, built and tested at commit `36942d3` (a later commit changed s
 | E2E against both images (read-only root, no capabilities)  | 14 passed                                                              |
 | Upload suite with FFmpeg executing inside the worker image | 16 passed (negative control fails as expected)                         |
 
+Hosted-staging bootstrap, verified 2026-11-10 on a **clean PostgreSQL 16 container with a non-superuser owner login** (CREATEROLE, no BYPASSRLS, default `createrole_self_grant`), the local S3 store, the worker bundle laid out as in the image and **no `.env` file**:
+
+| Command                                                 | Result                                                                                                                                                 |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `node dist/bootstrap.js --seed` (first start)           | roles created and granted with the SET option, 11 migrations, bucket created with versioning and CORS, 2 workspaces / 13 posts / 8 assets seeded; 29 s |
+| `node dist/main.js` with `RELAY_AUTO_MIGRATE/SEED=true` | bootstrap found nothing to do in about 1 s (`seeded:false`), both pools started, `/readyz` ok, queued jobs worked, clean exit on SIGTERM               |
+| `pnpm db:seed` on an already seeded database            | `demo data already present`, 0.1 s                                                                                                                     |
+
 ## Next runnable task
+
+Operator action pending (not code): deploy hosted staging by following the runbook's quick
+path. Then:
 
 Start **M2 · Source to clip** with the rights model, which M2's gate depends on: add
 owner/admin commands to grant and revoke rights per asset (the dispatch-time recheck and the

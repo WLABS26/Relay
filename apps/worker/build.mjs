@@ -11,6 +11,7 @@ await build({
   entryPoints: {
     main: 'src/main.ts',
     migrate: '../../packages/db/src/cli/migrate.ts',
+    bootstrap: 'src/bootstrap.ts',
   },
   outdir: 'dist',
   bundle: true,

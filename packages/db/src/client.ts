@@ -29,22 +29,73 @@ const relayTypes = {
   },
 };
 
+export type DatabaseRole = 'relay_app' | 'relay_worker';
+
 export interface PoolOptions {
   connectionString: string;
   max?: number;
   applicationName: string;
   onError?: (error: Error) => void;
+  /**
+   * Single-login mode (hosted staging): the connection string belongs to one login role and
+   * every checked-out connection first runs `SET ROLE <role>`, so RLS policies and grants
+   * apply exactly as with a dedicated login. A failed SET ROLE destroys the connection and
+   * fails the checkout: a query can never run with the login's wider privileges.
+   */
+  role?: DatabaseRole;
+  /** Keep pg's default type parsers (Graphile Worker expects them) instead of Relay's. */
+  defaultTypes?: boolean;
+}
+
+type ConnectCallback = (
+  err: Error | undefined,
+  client: pg.PoolClient | undefined,
+  done: (release?: unknown) => void,
+) => void;
+
+class RoleAssumingPool extends pg.Pool {
+  constructor(
+    config: pg.PoolConfig,
+    private readonly role: DatabaseRole,
+  ) {
+    super(config);
+  }
+
+  private async connectAsRole(): Promise<pg.PoolClient> {
+    const client = await super.connect();
+    try {
+      await client.query(`SET ROLE ${pg.escapeIdentifier(this.role)}`);
+    } catch (error) {
+      client.release(error as Error);
+      throw error;
+    }
+    return client;
+  }
+
+  // pg.Pool.query() uses the callback form; Kysely and application code use the promise form.
+  override connect(): Promise<pg.PoolClient>;
+  override connect(callback: ConnectCallback): void;
+  override connect(callback?: ConnectCallback): Promise<pg.PoolClient> | void {
+    const pending = this.connectAsRole();
+    if (!callback) return pending;
+    pending.then(
+      (client) =>
+        callback(undefined, client, (release) => client.release(release as Error | undefined)),
+      (error: Error) => callback(error, undefined, () => undefined),
+    );
+  }
 }
 
 export function createPool(options: PoolOptions): pg.Pool {
-  const pool = new pg.Pool({
+  const config: pg.PoolConfig = {
     connectionString: options.connectionString,
     max: options.max ?? 10,
     application_name: options.applicationName,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
-    types: relayTypes,
-  });
+    ...(options.defaultTypes ? {} : { types: relayTypes }),
+  };
+  const pool = options.role ? new RoleAssumingPool(config, options.role) : new pg.Pool(config);
   // A client error (idle in the pool, or checked out between queries when the server drops
   // the connection) must not crash the process: it is logged and the client discarded.
   pool.on('error', (error) => options.onError?.(error));

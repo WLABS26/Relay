@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type RelayConfig } from '@relay/config';
 import { REPO_ROOT } from '@relay/config/dotenv';
-import { withAuthBootstrap, withTenant } from '@relay/db';
+import { withAuthBootstrap, withTenant, withUser } from '@relay/db';
 import { AGE_BUCKETS, ManualClock, type DestinationState } from '@relay/domain';
 import { generateFixtures } from '@relay/media/fixtures';
 import type { SimulatorProfile } from '@relay/providers';
@@ -36,6 +36,7 @@ interface SeedContexts {
   app: ServiceContext;
   worker: ServiceContext;
   clock: ManualClock;
+  fixturesDir: string;
 }
 
 const DEMO_USERS = [
@@ -76,7 +77,7 @@ async function upload(
   name: string,
   mime: string,
 ): Promise<string> {
-  const bytes = await readFile(path.join(REPO_ROOT, 'fixtures/media', name));
+  const bytes = await readFile(path.join(c.fixturesDir, name));
   const start = await startUpload(
     c.app,
     user,
@@ -232,42 +233,61 @@ export interface SeedSummary {
   users: string[];
 }
 
+/**
+ * Whether the demo data is already loaded: the first demo owner exists and holds a membership.
+ * Memberships are only visible in that user's own scope (RLS), never from the bootstrap scope.
+ */
+export async function demoSeeded(ctx: ServiceContext): Promise<boolean> {
+  const owner = DEMO_USERS.find((u) => u.key === 'mara')!;
+  const user = await withAuthBootstrap(ctx.db, (tx) =>
+    tx
+      .selectFrom('users')
+      .select('id')
+      .where('emailNormalized', '=', owner.email)
+      .executeTakeFirst(),
+  );
+  if (!user) return false;
+  return withUser(ctx.db, user.id, async (tx) =>
+    Boolean(
+      await tx
+        .selectFrom('workspaceMemberships')
+        .select('id')
+        .where('userId', '=', user.id)
+        .executeTakeFirst(),
+    ),
+  );
+}
+
 export async function seedDemo(
   config: RelayConfig,
-  options: { log?: (m: string) => void } = {},
+  options: { log?: (m: string) => void; fixturesDir?: string } = {},
 ): Promise<SeedSummary> {
   const log = options.log ?? (() => {});
   if (!config.demoMode || config.isProduction)
     throw new Error('The demo seed only runs with RELAY_DEMO_MODE=true outside production.');
-  const manifest = path.join(REPO_ROOT, 'fixtures/media/manifest.json');
-  if (!existsSync(manifest)) {
-    log('generating synthetic media fixtures…');
-    await generateFixtures({ outDir: path.dirname(manifest) });
-  }
+  const fixturesDir = options.fixturesDir ?? path.join(REPO_ROOT, 'fixtures/media');
   const realNow = new Date();
   const clock = new ManualClock(realNow);
   const c: SeedContexts = {
     app: createServiceContext({ config, role: 'app', clock, poolMax: 4 }),
     worker: createServiceContext({ config, role: 'worker', clock, poolMax: 4 }),
     clock,
+    fixturesDir,
   };
   try {
-    const users = Object.fromEntries(
-      await Promise.all(DEMO_USERS.map(async (u) => [u.key, await ensureUser(c.app, u)] as const)),
-    ) as Record<(typeof DEMO_USERS)[number]['key'], AuthenticatedUser>;
-    const existing = await withAuthBootstrap(c.app.db, async (tx) => {
-      const m = await tx
-        .selectFrom('workspaceMemberships')
-        .select('id')
-        .where('userId', '=', users.mara.userId)
-        .executeTakeFirst()
-        .catch(() => undefined);
-      return Boolean(m);
-    });
-    if (existing) {
+    // Idempotent: a seeded database is recognised before any media is generated or uploaded,
+    // so a worker that seeds on every start (hosted staging) is cheap to restart.
+    if (await demoSeeded(c.app)) {
       log('demo data already present (run `pnpm db:reset` first to reseed)');
       return { workspaces: [], users: DEMO_USERS.map((u) => u.email) };
     }
+    if (!existsSync(path.join(fixturesDir, 'manifest.json'))) {
+      log('generating synthetic media fixtures…');
+      await generateFixtures({ outDir: fixturesDir, ffmpegPath: config.media.ffmpegPath });
+    }
+    const users = Object.fromEntries(
+      await Promise.all(DEMO_USERS.map(async (u) => [u.key, await ensureUser(c.app, u)] as const)),
+    ) as Record<(typeof DEMO_USERS)[number]['key'], AuthenticatedUser>;
 
     // ---- Tenant A: Fernhill Studio --------------------------------------------------------
     log('creating Fernhill Studio…');

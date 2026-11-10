@@ -1,4 +1,4 @@
-# Hosted staging: web on Vercel, services elsewhere
+# Hosted staging: web on Vercel, worker elsewhere
 
 How to run Relay on the internet for testing. Relay is four parts, and only one of them can
 live on Vercel:
@@ -6,9 +6,9 @@ live on Vercel:
 | Part                                                                     | Can it run on Vercel?                                   | Where it goes instead                                                                                                   |
 | ------------------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Web app** (Next.js)                                                    | Yes                                                     | Vercel project, root directory `apps/web`                                                                               |
-| **Worker** (Graphile Worker + FFmpeg; long-running, listens to Postgres) | No: Vercel functions are short-lived and have no FFmpeg | Any container host: Railway, Render, Fly.io, Cloud Run (min 1 instance), a VPS. Image: `infra/docker/worker.Dockerfile` |
-| **PostgreSQL 16**                                                        | Not on Vercel itself                                    | Neon (also offered in Vercel's Marketplace), Supabase, RDS, Cloud SQL                                                   |
-| **Object storage** (S3 API with versioning)                              | Not Vercel Blob (different API, no versioning)          | AWS S3, or another store with the S3 API _and_ object versioning (Backblaze B2, MinIO)                                  |
+| **Worker** (Graphile Worker + FFmpeg; long-running, listens to Postgres) | No: Vercel functions are short-lived and have no FFmpeg | Any container host: Render, Railway, Fly.io, Cloud Run (min 1 instance), a VPS. Image: `infra/docker/worker.Dockerfile` |
+| **PostgreSQL 16**                                                        | Not on Vercel itself                                    | Neon (offered inside Vercel under _Storage_), Supabase, RDS, Cloud SQL                                                  |
+| **Object storage** (S3 API with versioning)                              | Not Vercel Blob (different API, no versioning)          | AWS S3, or another store with the S3 API, object versioning _and_ bucket CORS                                           |
 
 Without the worker, uploads never finish validating and nothing publishes, so all four are
 needed for a meaningful test. Everything stays **simulated**: no real platform is contacted.
@@ -18,48 +18,17 @@ the KMS key provider ships (M3); staging runs with a local encryption keyring an
 
 ## Quick path (no prior experience assumed)
 
-Six things, in this order. Each one is a few clicks or one pasted command.
+You need accounts at Vercel, AWS (for the bucket) and Render or Railway (for the worker). Neon
+is created from inside Vercel. Nothing is installed on your computer and you never write SQL:
+the first time the worker starts it creates the database roles and tables, prepares the bucket
+and loads the demo data by itself.
 
-1. **Vercel project.** Vercel → Add New → Project → Import `WLABS26/Relay`. Before the first
-   deploy, open the project's **Settings → General**: _Root Directory_ `apps/web`, _Framework
-   Preset_ Next.js, _Node.js Version_ **22.x**. (The repository also declares Node 22 in
-   `apps/web/package.json`, which is why a build on Node 26 was refused.) Deploy: the build
-   should finish green. The site will answer, but sign-in cannot work until step 5.
-2. **Database.** Create a free Neon project (neon.tech) → open its SQL Editor → paste
-   `infra/postgres/managed-roles.sql` with three passwords you generated (a password manager's
-   generator is fine) → run it. From Neon's _Connection details_ copy two URLs: the **direct**
-   one and the **pooled** one. Build three connection strings by putting each role's name and
-   password into them:
-   - `DATABASE_URL_MIGRATOR` = `relay_migrator` on the **direct** URL
-   - `DATABASE_URL_APP` = `relay_app` on the **pooled** URL
-   - `DATABASE_URL_WORKER` = `relay_worker` on the **direct** URL
-3. **Tables.** GitHub → the repository → Settings → Environments → New environment `staging` →
-   Add environment secret `DATABASE_URL_MIGRATOR` (the migrator string). Then Actions →
-   _Migrate database_ → Run workflow → environment `staging` → Run. Green = tables created.
-4. **File storage.** AWS → S3 → Create bucket (private; _Bucket Versioning: Enable_). In the
-   bucket's _Permissions → CORS_, paste the JSON from section 2 with your Vercel URL. IAM →
-   create a user with access to that bucket only → create an access key. Note the bucket name,
-   region, access key and secret.
-5. **Variables.** Vercel → project → Settings → Environment Variables → add every row of the
-   table in section 3 (web column) → Deployments → Redeploy. Then open
-   `https://<your-app>.vercel.app/api/ready`: it must say `"database":"ok"` and `"storage":"ok"`.
-6. **Worker and demo data.** The worker cannot run on Vercel. On Railway or Render, create a
-   service from the GitHub repository with Dockerfile `infra/docker/worker.Dockerfile` (build
-   context: repository root), add the same variables (worker column) plus
-   `RELAY_WORKER_HEALTH_HOST=0.0.0.0`, and set its health check to port 3101 path `/healthz`.
-   Finally seed the demo accounts once, from a laptop with Node 22 and the same variables in a
-   local `.env`: `pnpm install` then `pnpm db:seed`. Sign in at your Vercel URL and follow
-   `docs/testing-guide.md` section 3.
+### 1. Two secrets
 
-If something fails, the detailed sections below explain each piece.
+Generate two random values once and keep them in a password manager. The web app and the
+worker must get the **same** two values.
 
-## 0. Decide and prepare (operator)
-
-1. **Who may see it.** With demo mode on, anyone who finds the URL can sign in as a demo user
-   and play with synthetic data. Either accept that for a short test or enable Vercel's
-   deployment protection (Settings → Deployment Protection).
-2. **Generate two secrets** on your machine and keep them in a password manager; they must be
-   identical on the web app and the worker:
+Mac or Linux (Terminal):
 
 ```bash
 openssl rand -base64 48
@@ -69,101 +38,173 @@ openssl rand -base64 48
 echo "k1:$(openssl rand -base64 32)"
 ```
 
-The first is `RELAY_SESSION_SECRET`; the second is `RELAY_ENCRYPTION_KEYS`.
+Windows (PowerShell):
 
-## 1. PostgreSQL
-
-1. Create a Postgres 16 database (Neon: _New project_; or Vercel → Storage → Neon).
-2. In its SQL editor, run `infra/postgres/managed-roles.sql` with three strong passwords.
-   If the provider created the database for you, use `ALTER DATABASE … OWNER TO relay_migrator`
-   as noted in the file.
-3. Note three connection strings:
-   - `DATABASE_URL_MIGRATOR`: `relay_migrator`, **direct** (non-pooled) host.
-   - `DATABASE_URL_APP`: `relay_app`; the **pooled** host (PgBouncer, transaction mode) is fine
-     and recommended for serverless.
-   - `DATABASE_URL_WORKER`: `relay_worker`, **direct** host (the worker uses LISTEN/NOTIFY).
-4. Apply migrations from GitHub: Settings → Environments → create `staging`, add the secret
-   `DATABASE_URL_MIGRATOR`; then Actions → **Migrate database** → Run workflow → `staging`.
-   This is deliberately a manual step.
-
-## 2. Object storage (AWS S3 shown)
-
-1. Create a private bucket (block all public access) in a region near the database.
-2. Enable **Bucket Versioning** (Relay pins the validated object version).
-3. CORS, with your Vercel URL as the origin:
-
-```json
-[
-  {
-    "AllowedOrigins": ["https://<your-app>.vercel.app"],
-    "AllowedMethods": ["PUT", "GET", "HEAD"],
-    "AllowedHeaders": [
-      "content-type",
-      "content-length",
-      "if-none-match",
-      "x-amz-checksum-sha256",
-      "x-amz-sdk-checksum-algorithm"
-    ],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 600
-  }
-]
+```powershell
+$b = New-Object byte[] 48; (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($b); [Convert]::ToBase64String($b)
 ```
 
-4. An IAM user with access limited to that bucket (`s3:PutObject`, `GetObject`,
-   `GetObjectVersion`, `DeleteObject`, `DeleteObjectVersion`, `ListBucket`,
-   `ListBucketVersions`, `AbortMultipartUpload`, `ListMultipartUploadParts`, `GetBucketVersioning`,
-   `PutBucketVersioning`, `PutBucketCors`). Note its access key and secret.
+```powershell
+$b = New-Object byte[] 32; (New-Object System.Security.Cryptography.RNGCryptoServiceProvider).GetBytes($b); "k1:" + [Convert]::ToBase64String($b)
+```
 
-Vercel Blob cannot be used: it is not S3-compatible and has no versioning.
+The first value is `RELAY_SESSION_SECRET`. The second, which starts with `k1:`, is
+`RELAY_ENCRYPTION_KEYS`.
 
-## 3. Environment variables
+### 2. Database (Neon, from inside Vercel)
 
-Same values for web (Vercel) and worker (container host) unless noted. Never commit them.
+Vercel → your Relay project → **Storage** → **Create Database** → **Neon** → keep the defaults
+→ connect it to the project for all environments. This adds `DATABASE_URL` and
+`DATABASE_URL_UNPOOLED` to the project's environment variables. Open Settings → Environment
+Variables, reveal `DATABASE_URL_UNPOOLED` and copy its value somewhere safe: the worker needs it
+in step 5. Do not open the SQL editor; the worker creates the roles and tables.
 
-| Variable                                                             | Value                                                                                                           |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `RELAY_ENV`                                                          | `staging` (Vercel sets `NODE_ENV=production`; without this Relay applies production rules and refuses to start) |
-| `RELAY_DEMO_MODE`                                                    | `true`                                                                                                          |
-| `RELAY_PUBLIC_URL`                                                   | `https://<your-app>.vercel.app` (exact origin; mutations are refused from any other origin)                     |
-| `RELAY_SESSION_SECRET`                                               | generated above                                                                                                 |
-| `RELAY_ENCRYPTION_PROVIDER` / `RELAY_ENCRYPTION_KEYS`                | `local` / generated above                                                                                       |
-| `DATABASE_URL_APP`                                                   | web only (pooled host)                                                                                          |
-| `DATABASE_URL_WORKER`                                                | worker only (direct host)                                                                                       |
-| `RELAY_DB_POOL_MAX`                                                  | web: `3` (each serverless instance has its own pool); worker: default                                           |
-| `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | from step 2                                                                                                     |
-| `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`                                  | leave unset for AWS S3; set both to the endpoint URL for other stores                                           |
-| `S3_FORCE_PATH_STYLE`                                                | `false` for AWS S3; usually `true` for others                                                                   |
-| `RELAY_WORKER_HEALTH_HOST` / `RELAY_WORKER_HEALTH_PORT`              | worker: `0.0.0.0` / `3101` (point the host's health check at `/healthz`)                                        |
-| `RELAY_LOG_LEVEL`                                                    | `info`                                                                                                          |
+### 3. File storage (AWS S3)
 
-Previews: Vercel preview deployments get different URLs, so `RELAY_PUBLIC_URL` will not match
-and sign-in mutations are refused there. Test on the production URL of the project (or disable
-preview deployments).
+1. AWS Console → S3 → **Create bucket**. Choose a unique name (for example
+   `relay-staging-yourname`) and the region nearest to you. Keep **Block all public access**
+   on and leave everything else at its default: Relay turns on versioning and sets CORS itself.
+2. IAM → Users → **Create user** (no console access) → **Attach policies directly** → **Create
+   policy** → JSON → paste the policy below with your bucket name in both `Resource` lines →
+   name it `relay-staging-bucket` → back in the user wizard, refresh, tick it, create the user.
+3. Open the user → **Security credentials** → **Create access key** → _Application running
+   outside AWS_ → copy the access key ID and the secret access key (the secret is shown once).
 
-## 4. Web app on Vercel
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Bucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:ListBucketMultipartUploads",
+        "s3:GetBucketVersioning",
+        "s3:PutBucketVersioning",
+        "s3:GetBucketCORS",
+        "s3:PutBucketCORS"
+      ],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME"
+    },
+    {
+      "Sid": "Objects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:AbortMultipartUpload",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/*"
+    }
+  ]
+}
+```
 
-Project settings: framework Next.js, **root directory `apps/web`**, Node **22.x**, install
-command left to detection (pnpm from `packageManager`), build command `next build`. Add the
-variables above for _Production_. The first deployment after the database is migrated and
-seeded should answer `GET /api/ready` with `{"ok":true,…}`.
+Another S3-compatible store works when it supports object versioning and bucket CORS: also set
+`S3_ENDPOINT` and `S3_PUBLIC_ENDPOINT` to its URL and `S3_FORCE_PATH_STYLE=true`.
 
-Seeding demo data: run `pnpm db:seed` from a machine that can reach the database and the
-bucket (your laptop with the staging variables in a local `.env`, or a one-off job on the
-worker host: `node dist/migrate.js` is migrations only; seeding needs the repository checkout).
+### 4. Web app variables (Vercel)
 
-## 5. Worker on a container host
+Vercel → project → Settings → **Environment Variables** → add every row below for
+_Production_. Then Deployments → the latest deployment's menu → **Redeploy**.
 
-Build from `infra/docker/worker.Dockerfile` with the repository root as the build context,
-set the variables above, expose port 3101 for the host's health check, and run one instance
-(`RELAY_WORKER_POOLS=general,media`). Allow 2 CPU / 2 GB for media validation. The worker
-refuses to start if the database schema is older than the build requires, so migrate first.
+| Variable                                   | Value                                                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `RELAY_ENV`                                | `staging` (Vercel sets `NODE_ENV=production`; without this Relay applies production rules and refuses to start) |
+| `RELAY_DEMO_MODE`                          | `true`                                                                                                          |
+| `RELAY_PUBLIC_URL`                         | the project's main address from Settings → Domains, e.g. `https://relay-yourteam.vercel.app`, no trailing slash |
+| `RELAY_SESSION_SECRET`                     | the first secret                                                                                                |
+| `RELAY_ENCRYPTION_PROVIDER`                | `local`                                                                                                         |
+| `RELAY_ENCRYPTION_KEYS`                    | the second secret (`k1:…`)                                                                                      |
+| `S3_BUCKET`                                | the bucket name                                                                                                 |
+| `S3_REGION`                                | the bucket's region, e.g. `eu-central-1`                                                                        |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | from step 3                                                                                                     |
+| `RELAY_DB_POOL_MAX`                        | `3` (each serverless instance keeps its own small pool)                                                         |
 
-## 6. Check
+`DATABASE_URL` and `DATABASE_URL_UNPOOLED` are already present from step 2. The site now
+builds and answers, but nobody can sign in until the worker has started once (next step),
+because the worker creates the tables.
 
-1. `https://<your-app>.vercel.app/api/ready` → database and storage `ok`.
-2. Worker host `/readyz` → `{"ok":true,…}`.
-3. Follow `docs/testing-guide.md` section 3 on the hosted URL.
+### 5. Worker and demo data (Render, or Railway)
+
+**Render:** Dashboard → **New** → **Background Worker** → connect GitHub and pick
+`WLABS26/Relay` → Language **Docker** → _Dockerfile Path_ `./infra/docker/worker.Dockerfile`
+(build context stays the repository root) → instance type _Starter_ is enough for the demo
+data → **Environment Variables**: the same ten rows as step 4 plus the four below → create. The
+first build takes several minutes because the image contains FFmpeg.
+
+| Variable                   | Value                                                  |
+| -------------------------- | ------------------------------------------------------ |
+| `DATABASE_URL`             | the `DATABASE_URL_UNPOOLED` value you copied in step 2 |
+| `RELAY_AUTO_MIGRATE`       | `true`                                                 |
+| `RELAY_AUTO_SEED`          | `true`                                                 |
+| `RELAY_WORKER_HEALTH_HOST` | `0.0.0.0`                                              |
+
+**Railway instead:** New Project → Deploy from GitHub repo → `WLABS26/Relay` → Variables: the
+same rows plus `RAILWAY_DOCKERFILE_PATH=infra/docker/worker.Dockerfile` → deploy. The worker
+needs no public address.
+
+On its first start the worker logs `created role relay_app`, `migrations: 11 applied`,
+`bucket …: versioning on, CORS allows …`, the seed steps and finally
+`deployment bootstrap done` with `"seeded":true`. Every later start takes about a second and
+logs `demo data already present`.
+
+### 6. Check
+
+1. `https://<your-app>.vercel.app/api/ready` shows `"database":"ok"` and `"storage":"ok"`.
+2. Open the site, choose a demo user (Mara at Fernhill Studio has every permission) and follow
+   `docs/testing-guide.md` section 3.
+
+### If something fails
+
+| Symptom                                                                        | Cause                                                                           | Fix                                                                                                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Vercel build: `Unsupported environment … Node.js version`                      | the project builds on Node 26                                                   | Settings → General → _Node.js Version_ **22.x**, redeploy                                                                |
+| web or worker exits with code 78 and a list of problems                        | a variable is missing or wrong (a missing `RELAY_ENV` applies production rules) | each line names the variable; fix it and redeploy                                                                        |
+| `DATABASE_URL points at a connection pooler`                                   | only the pooled address was set                                                 | add `DATABASE_URL_UNPOOLED` (Neon: the connection string with _Connection pooling_ switched off)                         |
+| `bucket "…" is not ready`                                                      | the access key may not change bucket settings                                   | use the policy above, or enable versioning and add a CORS rule for the origin the message names, then restart the worker |
+| `/api/ready` says the database is not ok; no bootstrap lines in the worker log | the worker has not started yet, or failed                                       | read the worker log; it names the problem                                                                                |
+| sign-in or saving fails with an origin or CSRF error                           | `RELAY_PUBLIC_URL` differs from the address in the browser                      | set it to the exact address you open                                                                                     |
+| uploads never leave "validating"                                               | the worker is not running                                                       | check the worker service and its log                                                                                     |
+
+## How it works, and what it is not
+
+- **One database login, still least privilege.** Hosted Postgres gives you one owner login.
+  On start-up the worker creates `relay_app` and `relay_worker` as NOLOGIN roles without
+  `BYPASSRLS`, grants the login the right to `SET ROLE` to them, and proves the switch. Every
+  pooled connection switches role right after connecting; a connection that cannot switch is
+  rejected, never used as the owner. Row-level security stays forced on every tenant table.
+- **Direct connection only.** The role switch is session state, which transaction poolers
+  drop, so single-login mode always uses the direct host (`DATABASE_URL_UNPOOLED`) and refuses
+  an address that looks like a pooler. `RELAY_DB_POOL_MAX=3` keeps the serverless web app
+  within Neon's connection limit.
+- **Automatic set-up is staging-only.** `RELAY_AUTO_MIGRATE` (roles, migrations, bucket
+  versioning and CORS) and `RELAY_AUTO_SEED` (demo data, once) are refused with
+  `RELAY_ENV=production`, as is single-login mode. Production uses separate logins
+  (`infra/postgres/managed-roles.sql`), the manual _Migrate database_ GitHub workflow
+  (`.github/workflows/migrate.yml`) and buckets managed as infrastructure.
+- **Still simulated.** No real platform is contacted; simulator results are labelled as such
+  everywhere in the product.
+
+## Separate logins (optional hardening for staging)
+
+To give staging the production shape instead: run `infra/postgres/managed-roles.sql` in Neon's
+SQL editor with three passwords; set `DATABASE_URL_APP` (`relay_app`; the pooled host is fine
+here) and `DATABASE_URL_WORKER` (`relay_worker`, direct host) instead of `DATABASE_URL`; add the
+GitHub environment secret `DATABASE_URL_MIGRATOR` and run the _Migrate database_ workflow; leave
+`RELAY_AUTO_MIGRATE` and `RELAY_AUTO_SEED` off and seed with `pnpm db:seed` from a machine that
+reaches the database and the bucket.
+
+## Previews
+
+Vercel preview deployments get different URLs, so `RELAY_PUBLIC_URL` will not match and sign-in
+mutations are refused there. Test on the project's main domain (or disable preview deployments).
 
 ## What stays local-only
 

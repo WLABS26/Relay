@@ -60,6 +60,8 @@ export function createServiceContext(options: CreateContextOptions): ServiceCont
     connectionString: role === 'app' ? config.database.appUrl : config.database.workerUrl,
     max: options.poolMax ?? config.database.poolMax,
     applicationName: `relay-${role}`,
+    // One login for everything (hosted staging): assume the least-privilege role per pool.
+    ...(config.database.singleLogin ? { role: role === 'app' ? 'relay_app' : 'relay_worker' } : {}),
     onError: (error) =>
       logger.error({ err: { message: error.message } }, 'idle database client error'),
   });

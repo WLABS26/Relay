@@ -5,15 +5,16 @@ What Relay defends, how, and where each control is tested. Spec references: §4 
 
 ## Tenancy
 
-| Control                          | Implementation                                                                                  | Evidence                                                                    |
-| -------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Tenant isolation in the database | `FORCE ROW LEVEL SECURITY` on tenant tables; policies read transaction-local `relay.*` settings | `tenancy.test.ts` "returns zero tenant rows without a tenant context"       |
-| No cross-tenant references       | Composite `(workspace_id, id)` foreign keys                                                     | `tenancy.test.ts` "composite foreign keys…"                                 |
-| No context leakage               | `set_config(…, true)` (transaction-local) on pooled connections                                 | `tenancy.test.ts` "never leaks tenant context across pooled connections"    |
-| Least privilege                  | `relay_app` and `relay_worker` have column-level grants, no `BYPASSRLS`, no DDL                 | `tenancy.test.ts` "enforces least privilege per database role"              |
-| Worker scans                     | A read-only maintenance scope returns IDs only; every action re-reads in a tenant transaction   | `tenancy.test.ts` "allows worker maintenance scans to read but never write" |
-| No existence leaks               | Cross-tenant IDs return `not_found` (never `forbidden`) through services and HTTP               | `tenancy.test.ts`, `e2e/security.spec.ts`                                   |
-| Immutable history                | Triggers make post and policy revisions, publish intents and audit events append-only           | migrations 0003, 0006, 0008                                                 |
+| Control                          | Implementation                                                                                                                                                 | Evidence                                                                    |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Tenant isolation in the database | `FORCE ROW LEVEL SECURITY` on tenant tables; policies read transaction-local `relay.*` settings                                                                | `tenancy.test.ts` "returns zero tenant rows without a tenant context"       |
+| No cross-tenant references       | Composite `(workspace_id, id)` foreign keys                                                                                                                    | `tenancy.test.ts` "composite foreign keys…"                                 |
+| No context leakage               | `set_config(…, true)` (transaction-local) on pooled connections                                                                                                | `tenancy.test.ts` "never leaks tenant context across pooled connections"    |
+| Least privilege                  | `relay_app` and `relay_worker` have column-level grants, no `BYPASSRLS`, no DDL                                                                                | `tenancy.test.ts` "enforces least privilege per database role"              |
+| Worker scans                     | A read-only maintenance scope returns IDs only; every action re-reads in a tenant transaction                                                                  | `tenancy.test.ts` "allows worker maintenance scans to read but never write" |
+| No existence leaks               | Cross-tenant IDs return `not_found` (never `forbidden`) through services and HTTP                                                                              | `tenancy.test.ts`, `e2e/security.spec.ts`                                   |
+| Immutable history                | Triggers make post and policy revisions, publish intents and audit events append-only                                                                          | migrations 0003, 0006, 0008                                                 |
+| Single-login staging databases   | One owner login; every pooled connection does `SET ROLE relay_app`/`relay_worker` and is rejected if the switch fails; direct host only; refused in production | `single-login.test.ts`, `env.test.ts` "database logins"                     |
 
 ## Authentication and sessions
 
@@ -82,6 +83,12 @@ What Relay defends, how, and where each control is tested. Spec references: §4 
 development secrets, http public/OIDC/storage URLs, local keyrings and missing OIDC. Web and
 worker exit with code 78 before serving anything (E2E-tested). `RELAY_ENV` defaults to
 production whenever `NODE_ENV=production`, so a forgotten variable cannot enable demo mode.
+
+Hosted staging may run from a single database login (`DATABASE_URL` alone) with the worker
+creating roles, applying migrations and preparing the bucket on start-up (`RELAY_AUTO_MIGRATE`,
+`RELAY_AUTO_SEED`). All three are refused in production, and a `DATABASE_URL` that points at a
+connection pooler is refused in any environment because transaction pooling would drop the role
+switch (`env.test.ts` "database logins", `bootstrap.test.ts`).
 
 ## Provider safety
 

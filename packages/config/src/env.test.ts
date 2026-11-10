@@ -173,6 +173,109 @@ describe('parseConfig', () => {
     expect(problems({ ...local, ...patch }).join('\n')).toMatch(pattern);
   });
 
+  describe('database logins', () => {
+    const { DATABASE_URL_APP: _app, DATABASE_URL_WORKER: _worker, ...noRoles } = local;
+
+    it('derives every connection from the direct host in single-login mode (SET ROLE is session state)', () => {
+      const c = parseConfig({
+        ...noRoles,
+        DATABASE_URL: 'postgres://owner:x@ep-a-pooler.example/relay',
+        DATABASE_URL_UNPOOLED: 'postgres://owner:x@direct.example/relay',
+      });
+      expect(c.database).toMatchObject({
+        singleLogin: true,
+        appUrl: 'postgres://owner:x@direct.example/relay',
+        workerUrl: 'postgres://owner:x@direct.example/relay',
+        migratorUrl: 'postgres://owner:x@direct.example/relay',
+      });
+      const only = parseConfig({ ...noRoles, DATABASE_URL: 'postgres://owner:x@h/relay' }).database;
+      expect([only.appUrl, only.workerUrl, only.migratorUrl]).toEqual(
+        Array(3).fill('postgres://owner:x@h/relay'),
+      );
+    });
+
+    it('pins sslmode=require (and prefer, verify-ca) to verify-full, leaving explicit libpq compatibility alone', () => {
+      const neon = 'postgres://owner:x@ep-a.example/relay?sslmode=require&channel_binding=require';
+      const c = parseConfig({ ...noRoles, DATABASE_URL: neon });
+      expect(c.database.appUrl).toBe(
+        'postgres://owner:x@ep-a.example/relay?sslmode=verify-full&channel_binding=require',
+      );
+      expect(c.database.workerUrl).toBe(c.database.appUrl);
+      expect(c.database.migratorUrl).toBe(c.database.appUrl);
+      for (const [given, expected] of [
+        ['postgres://a:b@h/d?sslmode=prefer', 'postgres://a:b@h/d?sslmode=verify-full'],
+        ['postgres://a:b@h/d?sslmode=verify-ca', 'postgres://a:b@h/d?sslmode=verify-full'],
+        ['postgres://a:b@h/d?sslmode=verify-full', 'postgres://a:b@h/d?sslmode=verify-full'],
+        ['postgres://a:b@h/d?sslmode=disable', 'postgres://a:b@h/d?sslmode=disable'],
+        [
+          'postgres://a:b@h/d?uselibpqcompat=true&sslmode=require',
+          'postgres://a:b@h/d?uselibpqcompat=true&sslmode=require',
+        ],
+        ['postgres://a:b@h/d', 'postgres://a:b@h/d'],
+      ]) {
+        expect(parseConfig({ ...noRoles, DATABASE_URL: given }).database.appUrl).toBe(expected);
+      }
+      expect(
+        parseConfig({ ...local, DATABASE_URL_APP: 'postgres://app:x@h/d?sslmode=require' }).database
+          .appUrl,
+      ).toBe('postgres://app:x@h/d?sslmode=verify-full');
+    });
+
+    it('refuses a pooler host in single-login mode unless the direct host is given too', () => {
+      for (const url of [
+        'postgres://owner:x@ep-a-pooler.eu-central-1.example/relay',
+        'postgres://owner:x@h/relay?pgbouncer=true',
+      ]) {
+        expect(problems({ ...noRoles, DATABASE_URL: url }).join('\n')).toContain(
+          'connection pooler',
+        );
+      }
+      expect(
+        problems({
+          ...noRoles,
+          DATABASE_URL: 'postgres://owner:x@ep-a-pooler.example/relay',
+          DATABASE_URL_UNPOOLED: 'postgres://owner:x@direct.example/relay',
+        }),
+      ).toEqual([]);
+    });
+
+    it('keeps separate logins when both per-role URLs are set, even if DATABASE_URL is also present', () => {
+      const c = parseConfig({ ...local, DATABASE_URL: 'postgres://owner:x@h/relay' });
+      expect(c.database).toMatchObject({
+        singleLogin: false,
+        appUrl: local.DATABASE_URL_APP,
+        migratorUrl: undefined,
+      });
+    });
+
+    it('never lets one pool fall back to the raw login while the other has a role', () => {
+      expect(
+        problems({
+          ...noRoles,
+          DATABASE_URL_APP: local.DATABASE_URL_APP,
+          DATABASE_URL: 'postgres://owner:x@h/relay',
+        }).join('\n'),
+      ).toContain('must be set together');
+      expect(problems(noRoles).join('\n')).toContain('or DATABASE_URL alone');
+    });
+
+    it('refuses single-login mode and automatic migration or seeding in production', () => {
+      const { DATABASE_URL_APP: _a, DATABASE_URL_WORKER: _w, ...prodNoRoles } = production;
+      expect(
+        problems({ ...prodNoRoles, DATABASE_URL: 'postgres://owner:x@h/relay' }).join('\n'),
+      ).toContain('single-login mode is for staging');
+      expect(problems({ ...production, RELAY_AUTO_MIGRATE: 'true' }).join('\n')).toContain(
+        'refused in production',
+      );
+      expect(problems({ ...production, RELAY_AUTO_SEED: 'true' }).join('\n')).toContain(
+        'refused in production',
+      );
+      expect(problems({ ...local, RELAY_AUTO_MIGRATE: 'true', RELAY_AUTO_SEED: 'true' })).toEqual(
+        [],
+      );
+    });
+  });
+
   it('recognises config errors across module instances', () => {
     const foreign = Object.assign(new Error('x'), { name: 'ConfigError', problems: ['p'] });
     expect(isConfigError(foreign)).toBe(true);

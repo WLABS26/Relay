@@ -9,6 +9,8 @@ import {
   CreateBucketCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  GetBucketCorsCommand,
+  GetBucketVersioningCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -407,6 +409,24 @@ export class ObjectStorage {
         },
       }),
     );
+  }
+
+  /** Current bucket settings, for verifying a bucket that was provisioned by hand. */
+  async describeBucket(): Promise<{ versioning: boolean; corsOrigins: string[] }> {
+    const [versioning, cors] = await Promise.all([
+      this.internal.send(new GetBucketVersioningCommand({ Bucket: this.bucket })),
+      this.internal
+        .send(new GetBucketCorsCommand({ Bucket: this.bucket }))
+        .catch((error: unknown) => {
+          if (error instanceof S3ServiceException && error.name === 'NoSuchCORSConfiguration')
+            return { CORSRules: [] };
+          throw error;
+        }),
+    ]);
+    return {
+      versioning: versioning.Status === 'Enabled',
+      corsOrigins: (cors.CORSRules ?? []).flatMap((rule) => rule.AllowedOrigins ?? []),
+    };
   }
 
   async ping(): Promise<void> {

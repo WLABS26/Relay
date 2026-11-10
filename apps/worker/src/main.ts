@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hostname } from 'node:os';
-import pg from 'pg';
 import {
   Logger,
   parseCronItems,
@@ -11,7 +10,7 @@ import {
 } from 'graphile-worker';
 import { isConfigError, loadConfig, type RelayConfig } from '@relay/config';
 import { loadDotEnv } from '@relay/config/dotenv';
-import { checkDatabase, REQUIRED_SCHEMA_VERSION } from '@relay/db';
+import { checkDatabase, createPool, REQUIRED_SCHEMA_VERSION } from '@relay/db';
 import { prlimitAvailable } from '@relay/media';
 import {
   advancePublish,
@@ -28,6 +27,7 @@ import {
   type ServiceContext,
   type TaskName,
 } from '@relay/services';
+import { bootstrapDeployment } from '@relay/services/bootstrap';
 import { processAssetProbe } from '@relay/services/media-pipeline';
 
 /**
@@ -62,6 +62,27 @@ if (config.media.usePrlimit && !prlimitAvailable()) {
   );
 }
 const workerBase = config.worker.workerId ?? `${hostname()}-${process.pid}`;
+
+// Hosted staging: on start-up, create the database roles, migrate, prepare the bucket and seed
+// the demo data when the operator asked for it. Production configuration refuses these flags
+// (packages/config), so this never runs there.
+if (config.ops.autoMigrate || config.ops.autoSeed) {
+  log.info(
+    { migrate: config.ops.autoMigrate, seed: config.ops.autoSeed },
+    'bootstrapping the deployment',
+  );
+  try {
+    const result = await bootstrapDeployment(config, {
+      log: (message) => log.info({ component: 'bootstrap' }, message),
+      migrate: config.ops.autoMigrate,
+      seed: config.ops.autoSeed,
+    });
+    log.info(result, 'deployment bootstrap done');
+  } catch (error) {
+    log.fatal({ err: safeError(error) }, 'deployment bootstrap failed');
+    process.exit(1);
+  }
+}
 
 const schema = await checkDatabase(ctx.db).catch((error: unknown) => {
   log.fatal({ err: safeError(error) }, 'cannot reach the database');
@@ -152,18 +173,18 @@ const graphileLogger = new Logger((scope) => (level, message, meta) => {
   else if (level === 'info') log.debug(entry, message);
 });
 
-// Graphile Worker gets its own pool with pg's default type parsers.
-const queuePool = new pg.Pool({
+// Graphile Worker gets its own pool with pg's default type parsers. It runs as relay_worker like
+// every other worker connection (SET ROLE in single-login mode). Graphile holds a long-lived
+// LISTEN client; a dropped connection must surface as a logged error (Graphile then
+// reconnects), never as an unhandled 'error' event that kills the worker.
+const queuePool = createPool({
   connectionString: config.database.workerUrl,
   max: config.worker.generalConcurrency + config.worker.mediaConcurrency + 4,
-  application_name: 'relay-worker-queue',
+  applicationName: 'relay-worker-queue',
+  defaultTypes: true,
+  ...(config.database.singleLogin ? { role: 'relay_worker' as const } : {}),
+  onError: (error) => log.error({ err: safeError(error) }, 'queue client error'),
 });
-queuePool.on('error', (error) => log.error({ err: safeError(error) }, 'queue pool client error'));
-// Graphile holds a long-lived LISTEN client; a dropped connection must surface as a logged
-// error (Graphile then reconnects), never as an unhandled 'error' event that kills the worker.
-queuePool.on('connect', (client) =>
-  client.on('error', (error) => log.error({ err: safeError(error) }, 'queue client error')),
-);
 
 const runners: Runner[] = [];
 for (const pool of config.worker.pools) {
