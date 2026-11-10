@@ -9,7 +9,7 @@ resuming; do not re-scaffold completed work.
 - **Last updated:** 2026-11-10 (hosted-staging simplification)
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
 - **Try it:** [`docs/testing-guide.md`](testing-guide.md) (GitHub Codespaces via `.devcontainer/`, or locally)
-- **Published:** pushed to GitHub on 2026-11-10; CI run [42799618524](https://github.com/WLABS26/Relay/actions/runs/42799618524) on `a86c0e3` passed all jobs (lint/types/unit, integration + end-to-end on a clean runner, container images); the integration job now also runs on PostgreSQL 18. The repository is **public**. Hosted staging is prepared as a paste-the-variables flow (one Neon login, a worker that creates roles, migrates, prepares the bucket and seeds itself): [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md). Deploying it is the owner's action; the Vercel web project exists, database, bucket and worker are pending.
+- **Published:** pushed to GitHub on 2026-11-10; CI run [42818414125](https://github.com/WLABS26/Relay/actions/runs/42818414125) on `ce89b92` passed all four jobs (lint/types/unit; integration + end-to-end on PostgreSQL 16; integration on PostgreSQL 18; container images). The repository is **public**. Hosted staging is prepared as a paste-the-variables flow (one Neon login, a worker that creates roles, migrates, prepares the bucket and seeds itself): [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md). Deploying it is the owner's action; the Vercel web project exists, database, bucket and worker are pending.
 - **Next milestone:** M2 · Source to clip (see [Next runnable task](#next-runnable-task))
 
 > Every connection in this build is **simulated**. A simulator success demonstrates workflow

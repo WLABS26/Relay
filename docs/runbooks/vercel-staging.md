@@ -60,8 +60,9 @@ the optional Auth and Realtime services off. Then **Connect Project**: select th
 and all three environments, leave _Create database branch for deployment_ **unchecked**, and
 connect. This adds `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct) to the project's
 environment variables, plus `PG*` and legacy `POSTGRES_*` variables that Relay ignores. Copy the
-direct connection string (`DATABASE_URL_UNPOOLED`, shown on the Storage tab and under Settings →
-Environment Variables) somewhere safe: the worker needs it in step 5. Do not open the SQL
+direct connection string (`DATABASE_URL_UNPOOLED`) somewhere safe: the worker needs it in step 5.
+It is shown on the Storage tab (Neon's connection details with _Connection pooling_ off) and, when
+Vercel stored it as a readable variable, under Settings → Environment Variables. Do not open the SQL
 editor; the worker creates the roles and tables. The database is created on Neon's current
 default version (PostgreSQL 18); Relay runs on 16 or newer and its tests run against 16 and 18.
 
@@ -120,18 +121,18 @@ Another S3-compatible store works when it supports object versioning and bucket 
 Vercel → project → Settings → **Environment Variables** → add every row below for
 _Production_. Then Deployments → the latest deployment's menu → **Redeploy**.
 
-| Variable                                   | Value                                                                                                           |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `RELAY_ENV`                                | `staging` (Vercel sets `NODE_ENV=production`; without this Relay applies production rules and refuses to start) |
-| `RELAY_DEMO_MODE`                          | `true`                                                                                                          |
-| `RELAY_PUBLIC_URL`                         | the project's main address from Settings → Domains, e.g. `https://relay-yourteam.vercel.app`, no trailing slash |
-| `RELAY_SESSION_SECRET`                     | the first secret                                                                                                |
-| `RELAY_ENCRYPTION_PROVIDER`                | `local`                                                                                                         |
-| `RELAY_ENCRYPTION_KEYS`                    | the second secret (`k1:…`)                                                                                      |
-| `S3_BUCKET`                                | the bucket name                                                                                                 |
-| `S3_REGION`                                | the bucket's region, e.g. `eu-central-1`                                                                        |
-| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | from step 3                                                                                                     |
-| `RELAY_DB_POOL_MAX`                        | `3` (each serverless instance keeps its own small pool)                                                         |
+| Variable                                   | Value                                                                                                                                                             |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RELAY_ENV`                                | `staging` (Next.js runs every Vercel deployment, previews included, with `NODE_ENV=production`; without this Relay applies production rules and refuses to start) |
+| `RELAY_DEMO_MODE`                          | `true`                                                                                                                                                            |
+| `RELAY_PUBLIC_URL`                         | the project's main address from Settings → Domains, e.g. `https://relay-yourteam.vercel.app`, no trailing slash                                                   |
+| `RELAY_SESSION_SECRET`                     | the first secret                                                                                                                                                  |
+| `RELAY_ENCRYPTION_PROVIDER`                | `local`                                                                                                                                                           |
+| `RELAY_ENCRYPTION_KEYS`                    | the second secret (`k1:…`)                                                                                                                                        |
+| `S3_BUCKET`                                | the bucket name                                                                                                                                                   |
+| `S3_REGION`                                | the bucket's region, e.g. `eu-central-1`                                                                                                                          |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | from step 3                                                                                                                                                       |
+| `RELAY_DB_POOL_MAX`                        | `3` (each serverless instance keeps its own small pool)                                                                                                           |
 
 `DATABASE_URL` and `DATABASE_URL_UNPOOLED` are already present from step 2. The site now
 builds and answers, but nobody can sign in until the worker has started once (next step),
@@ -171,15 +172,15 @@ logs `demo data already present`.
 
 ### If something fails
 
-| Symptom                                                                        | Cause                                                                           | Fix                                                                                                                      |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Vercel build: `Unsupported environment … Node.js version`                      | the project builds on Node 26                                                   | Settings → General → _Node.js Version_ **22.x**, redeploy                                                                |
-| web or worker exits with code 78 and a list of problems                        | a variable is missing or wrong (a missing `RELAY_ENV` applies production rules) | each line names the variable; fix it and redeploy                                                                        |
-| `DATABASE_URL points at a connection pooler`                                   | only the pooled address was set                                                 | add `DATABASE_URL_UNPOOLED` (Neon: the connection string with _Connection pooling_ switched off)                         |
-| `bucket "…" is not ready`                                                      | the access key may not change bucket settings                                   | use the policy above, or enable versioning and add a CORS rule for the origin the message names, then restart the worker |
-| `/api/ready` says the database is not ok; no bootstrap lines in the worker log | the worker has not started yet, or failed                                       | read the worker log; it names the problem                                                                                |
-| sign-in or saving fails with an origin or CSRF error                           | `RELAY_PUBLIC_URL` differs from the address in the browser                      | set it to the exact address you open                                                                                     |
-| uploads never leave "validating"                                               | the worker is not running                                                       | check the worker service and its log                                                                                     |
+| Symptom                                                                        | Cause                                                                                                                 | Fix                                                                                                                                                    |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vercel build: `Unsupported environment … Node.js version`                      | the build ran on Vercel's default Node 26 instead of the 22.x that `engines.node` in `apps/web/package.json` asks for | redeploy (Vercel honours `engines.node` since that field was added); if it still happens, Settings → Build and Deployment → _Node.js Version_ **22.x** |
+| web or worker exits with code 78 and a list of problems                        | a variable is missing or wrong (a missing `RELAY_ENV` applies production rules)                                       | each line names the variable; fix it and redeploy                                                                                                      |
+| `DATABASE_URL points at a connection pooler`                                   | only the pooled address was set                                                                                       | add `DATABASE_URL_UNPOOLED` (Neon: the connection string with _Connection pooling_ switched off)                                                       |
+| `bucket "…" is not ready`                                                      | the access key may not change bucket settings                                                                         | use the policy above, or enable versioning and add a CORS rule for the origin the message names, then restart the worker                               |
+| `/api/ready` says the database is not ok; no bootstrap lines in the worker log | the worker has not started yet, or failed                                                                             | read the worker log; it names the problem                                                                                                              |
+| sign-in or saving fails with an origin or CSRF error                           | `RELAY_PUBLIC_URL` differs from the address in the browser                                                            | set it to the exact address you open                                                                                                                   |
+| uploads never leave "validating"                                               | the worker is not running                                                                                             | check the worker service and its log                                                                                                                   |
 
 ## How it works, and what it is not
 
