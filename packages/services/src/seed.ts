@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { type RelayConfig } from '@relay/config';
 import { REPO_ROOT } from '@relay/config/dotenv';
-import { withAuthBootstrap, withTenant, withUser } from '@relay/db';
+import { withAuthBootstrap, withTenant } from '@relay/db';
 import { AGE_BUCKETS, ManualClock, type DestinationState } from '@relay/domain';
 import { generateFixtures } from '@relay/media/fixtures';
 import type { SimulatorProfile } from '@relay/providers';
@@ -233,11 +233,20 @@ export interface SeedSummary {
   users: string[];
 }
 
+/** Recorded with the completion marker; bump when the demo data set changes. */
+export const DEMO_SEED_VERSION = '2026-11-10';
+
+export type DemoSeedState = 'absent' | 'complete' | 'incomplete';
+
 /**
- * Whether the demo data is already loaded: the first demo owner exists and holds a membership.
- * Memberships are only visible in that user's own scope (RLS), never from the bootstrap scope.
+ * Whether the demo data is loaded. The seed spans many transactions, uploads and media jobs,
+ * so completion is recorded explicitly (relay_demo_seed, migration 0012) as its very last
+ * step. Demo users without that record mean an earlier run was interrupted: the database must
+ * be reset, because the seed cannot resume half-way.
  */
-export async function demoSeeded(ctx: ServiceContext): Promise<boolean> {
+export async function demoSeedState(ctx: ServiceContext): Promise<DemoSeedState> {
+  const marker = await ctx.db.selectFrom('relayDemoSeed').select('seedVersion').executeTakeFirst();
+  if (marker) return 'complete';
   const owner = DEMO_USERS.find((u) => u.key === 'mara')!;
   const user = await withAuthBootstrap(ctx.db, (tx) =>
     tx
@@ -246,16 +255,7 @@ export async function demoSeeded(ctx: ServiceContext): Promise<boolean> {
       .where('emailNormalized', '=', owner.email)
       .executeTakeFirst(),
   );
-  if (!user) return false;
-  return withUser(ctx.db, user.id, async (tx) =>
-    Boolean(
-      await tx
-        .selectFrom('workspaceMemberships')
-        .select('id')
-        .where('userId', '=', user.id)
-        .executeTakeFirst(),
-    ),
-  );
+  return user ? 'incomplete' : 'absent';
 }
 
 export async function seedDemo(
@@ -277,9 +277,15 @@ export async function seedDemo(
   try {
     // Idempotent: a seeded database is recognised before any media is generated or uploaded,
     // so a worker that seeds on every start (hosted staging) is cheap to restart.
-    if (await demoSeeded(c.app)) {
+    const state = await demoSeedState(c.app);
+    if (state === 'complete') {
       log('demo data already present (run `pnpm db:reset` first to reseed)');
       return { workspaces: [], users: DEMO_USERS.map((u) => u.email) };
+    }
+    if (state === 'incomplete') {
+      throw new Error(
+        'An earlier demo seed did not finish (demo users exist, but the completion record is missing) and the seed cannot resume half-way. Reset the database and start again: locally `pnpm db:reset`; on a hosted database delete it and create one with the same name (Neon: Branches → main → Databases).',
+      );
     }
     if (!existsSync(path.join(fixturesDir, 'manifest.json'))) {
       log('generating synthetic media fixtures…');
@@ -662,6 +668,8 @@ export async function seedDemo(
       submit: false,
     });
 
+    // Last: the completion marker. Everything before it is visible but not yet "seeded".
+    await c.app.db.insertInto('relayDemoSeed').values({ seedVersion: DEMO_SEED_VERSION }).execute();
     return {
       workspaces: [
         { slug: 'fernhill', pages: 3, posts: history.length + week.length + 3 },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, isConfigError, parseConfig } from './env';
+import { ConfigError, isConfigError, parseConfig, resolveDeploymentEnv } from './env';
 
 const KEY = Buffer.alloc(32, 7).toString('base64');
 
@@ -219,6 +219,27 @@ describe('parseConfig', () => {
         parseConfig({ ...local, DATABASE_URL_APP: 'postgres://app:x@h/d?sslmode=require' }).database
           .appUrl,
       ).toBe('postgres://app:x@h/d?sslmode=verify-full');
+    });
+
+    it('refuses a separate migrator login in single-login mode', () => {
+      expect(
+        problems({
+          ...noRoles,
+          DATABASE_URL: 'postgres://owner:x@h/relay',
+          DATABASE_URL_MIGRATOR: 'postgres://relay_migrator:x@h/relay',
+        }).join('\n'),
+      ).toContain('DATABASE_URL_MIGRATOR is not used in single-login mode');
+    });
+
+    it('resolves the deployment environment from a raw environment', () => {
+      expect(resolveDeploymentEnv({})).toBe('local');
+      expect(resolveDeploymentEnv({ NODE_ENV: 'production' })).toBe('production');
+      expect(resolveDeploymentEnv({ NODE_ENV: 'production', RELAY_ENV: 'staging' })).toBe(
+        'staging',
+      );
+      expect(resolveDeploymentEnv({ NODE_ENV: 'production', RELAY_ENV: 'nonsense' })).toBe(
+        'production',
+      );
     });
 
     it('refuses a pooler host in single-login mode unless the direct host is given too', () => {

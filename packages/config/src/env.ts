@@ -309,6 +309,17 @@ function pinSslMode<T extends string | undefined>(url: T): T {
   ) as T;
 }
 
+/**
+ * The deployment environment a raw environment resolves to, usable before (or without) a
+ * successful parse: `RELAY_ENV` when valid, else production whenever NODE_ENV says so.
+ */
+export function resolveDeploymentEnv(source: Record<string, string | undefined>): DeploymentEnv {
+  const explicit = source.RELAY_ENV?.trim();
+  if (explicit && (DEPLOYMENT_ENVS as readonly string[]).includes(explicit))
+    return explicit as DeploymentEnv;
+  return source.NODE_ENV?.trim() === 'production' ? 'production' : 'local';
+}
+
 /** Hostnames and parameters that providers use for their transaction poolers. */
 function looksPooled(url: string): boolean {
   try {
@@ -339,17 +350,26 @@ export function parseConfig(source: Record<string, string | undefined>): RelayCo
   const isProduction = env === 'production';
 
   // Database logins: either both per-role URLs, or DATABASE_URL alone (single-login mode).
-  // Single-login pools assume their role with SET ROLE, which is session state that transaction
-  // poolers (PgBouncer, Neon's "-pooler" host) do not preserve, so every pool uses the direct
-  // host: DATABASE_URL_UNPOOLED when the provider supplies one.
+  // Single-login pools make the server assume their role at session start and verify it on
+  // every connection (packages/db/src/client.ts); a transaction pooler (PgBouncer, Neon's
+  // "-pooler" host) cannot carry that, so every pool uses the direct host: DATABASE_URL_UNPOOLED
+  // when the provider supplies one. The hostname check below only gives a friendlier message
+  // up front; the pool's verification is what fails closed.
   const singleLogin = !e.DATABASE_URL_APP && !e.DATABASE_URL_WORKER && Boolean(e.DATABASE_URL);
   const directUrl = e.DATABASE_URL_UNPOOLED ?? e.DATABASE_URL;
   const appUrl = e.DATABASE_URL_APP ?? directUrl;
   const workerUrl = e.DATABASE_URL_WORKER ?? directUrl;
-  const migratorUrl = e.DATABASE_URL_MIGRATOR ?? (singleLogin ? directUrl : undefined);
+  // In single-login mode the login that migrates must be the login the pools use: the worker
+  // creates the roles and grants itself SET on them, which would be useless for another login.
+  const migratorUrl = singleLogin ? directUrl : e.DATABASE_URL_MIGRATOR;
+  if (singleLogin && e.DATABASE_URL_MIGRATOR) {
+    problems.push(
+      'DATABASE_URL_MIGRATOR is not used in single-login mode: the worker creates the roles and migrates as the DATABASE_URL login. Unset it, or set DATABASE_URL_APP and DATABASE_URL_WORKER for separate logins',
+    );
+  }
   if (singleLogin && directUrl && looksPooled(directUrl)) {
     problems.push(
-      'DATABASE_URL points at a connection pooler, which drops SET ROLE between transactions: set DATABASE_URL_UNPOOLED to the direct connection string (Neon calls it "unpooled")',
+      'DATABASE_URL points at a connection pooler, which cannot carry the per-connection role switch: set DATABASE_URL_UNPOOLED to the direct connection string (Neon calls it "unpooled")',
     );
   }
   if (!appUrl || !workerUrl) {

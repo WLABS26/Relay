@@ -101,8 +101,8 @@ provider write; repeated 429s give up without dispatching; rights revoked after 
 
 | Suite                                       | Command                                                        | Result                |
 | ------------------------------------------- | -------------------------------------------------------------- | --------------------- |
-| Unit                                        | `pnpm test`                                                    | 214 passed (18 files) |
-| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 60 passed (7 files)   |
+| Unit                                        | `pnpm test`                                                    | 227 passed (20 files) |
+| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 61 passed (7 files)   |
 | End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 16 passed             |
 | E2E against container images                | `E2E_BASE_URL=… pnpm --filter @relay/web exec playwright test` | 14 passed             |
 | Uploads with FFmpeg inside the worker image | uploads suite with image-backed `FFPROBE_PATH`/`FFMPEG_PATH`   | 16 passed             |
@@ -165,6 +165,8 @@ None of these can be completed from code; each needs a separate operator action.
 - Single-login database mode (`DATABASE_URL` alone, pools `SET ROLE`) and the worker's automatic bootstrap (`RELAY_AUTO_MIGRATE`, `RELAY_AUTO_SEED`) are **staging only** and refused in production. The mode needs the direct database host; pooler addresses are refused.
 - Relay requires PostgreSQL 16 or newer (role grants with the SET option). Local development and the images pin 16.6 (ADR-009); Neon creates 18 by default and the integration suite is verified on both.
 - The demo seed was not idempotent before 2026-11-10 (its presence check ran in a scope where RLS hides memberships); fixed and covered by `single-login.test.ts`, which seeds twice.
+- The demo seed records its completion (`relay_demo_seed`, migration 0012); an interrupted first seed is reported with reset instructions instead of being mistaken for a finished one.
+- On Vercel an invalid configuration no longer surfaces as the platform's `MIDDLEWARE_INVOCATION_FAILED` page: the proxy serves a "Relay is not configured yet" page (problems listed outside production).
 
 ## Commands verified
 

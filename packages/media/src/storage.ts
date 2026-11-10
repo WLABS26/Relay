@@ -6,7 +6,9 @@ import { pipeline } from 'node:stream/promises';
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
+  type CORSRule,
   CreateBucketCommand,
+  type CreateBucketConfiguration,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetBucketCorsCommand,
@@ -57,9 +59,11 @@ export class ObjectStorage {
   readonly bucket: string;
   private readonly internal: S3Client;
   private readonly presigner: S3Client;
+  private readonly region: string;
 
   constructor(config: RelayConfig['storage']) {
     this.bucket = config.bucket;
+    this.region = config.region;
     const base = {
       region: config.region,
       forcePathStyle: config.forcePathStyle,
@@ -374,12 +378,31 @@ export class ObjectStorage {
     return deleted;
   }
 
-  /** Idempotent bucket provisioning: create, enable versioning, apply CORS. */
+  /**
+   * Idempotent bucket provisioning: create when missing, enable versioning, allow the given
+   * origins through CORS. Only a "not found" answer leads to CreateBucket; a redirect (wrong
+   * region) or a denial is reported as is. Other origins' CORS rules are kept.
+   */
   async ensureBucket(corsOrigins: string[]): Promise<void> {
     try {
       await this.internal.send(new HeadBucketCommand({ Bucket: this.bucket }));
-    } catch {
-      await this.internal.send(new CreateBucketCommand({ Bucket: this.bucket }));
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+      await this.internal.send(
+        new CreateBucketCommand({
+          Bucket: this.bucket,
+          // S3 needs the region for every bucket outside us-east-1; S3-compatible stores
+          // accept or ignore it.
+          ...(this.region && this.region !== 'us-east-1'
+            ? {
+                CreateBucketConfiguration: {
+                  LocationConstraint: this
+                    .region as CreateBucketConfiguration['LocationConstraint'],
+                },
+              }
+            : {}),
+        }),
+      );
     }
     await this.internal.send(
       new PutBucketVersioningCommand({
@@ -387,26 +410,18 @@ export class ObjectStorage {
         VersioningConfiguration: { Status: 'Enabled' },
       }),
     );
+    const existing = await this.internal
+      .send(new GetBucketCorsCommand({ Bucket: this.bucket }))
+      .then((out) => out.CORSRules ?? [])
+      .catch((error: unknown) => {
+        if (error instanceof S3ServiceException && error.name === 'NoSuchCORSConfiguration')
+          return [] as CORSRule[];
+        throw error;
+      });
     await this.internal.send(
       new PutBucketCorsCommand({
         Bucket: this.bucket,
-        CORSConfiguration: {
-          CORSRules: [
-            {
-              AllowedOrigins: corsOrigins,
-              AllowedMethods: ['PUT', 'GET', 'HEAD'],
-              AllowedHeaders: [
-                'content-type',
-                'content-length',
-                'if-none-match',
-                'x-amz-checksum-sha256',
-                'x-amz-sdk-checksum-algorithm',
-              ],
-              ExposeHeaders: ['ETag'],
-              MaxAgeSeconds: 600,
-            },
-          ],
-        },
+        CORSConfiguration: { CORSRules: mergeCorsRules(existing, relayCorsRule(corsOrigins)) },
       }),
     );
   }
@@ -432,6 +447,33 @@ export class ObjectStorage {
   async ping(): Promise<void> {
     await this.internal.send(new HeadBucketCommand({ Bucket: this.bucket }));
   }
+}
+
+/** The CORS rule browser uploads and previews need for the given web origins. */
+export function relayCorsRule(origins: string[]): CORSRule {
+  return {
+    AllowedOrigins: origins,
+    AllowedMethods: ['PUT', 'GET', 'HEAD'],
+    AllowedHeaders: [
+      'content-type',
+      'content-length',
+      'if-none-match',
+      'x-amz-checksum-sha256',
+      'x-amz-sdk-checksum-algorithm',
+    ],
+    ExposeHeaders: ['ETag'],
+    MaxAgeSeconds: 600,
+  };
+}
+
+/**
+ * Keep rules that belong to other origins (another deployment sharing the bucket, a test
+ * origin added by hand) and replace any rule that mentions one of ours with `rule`.
+ */
+export function mergeCorsRules(existing: CORSRule[], rule: CORSRule): CORSRule[] {
+  const ours = new Set(rule.AllowedOrigins ?? []);
+  const kept = existing.filter((r) => !(r.AllowedOrigins ?? []).some((o) => ours.has(o)));
+  return [...kept, rule];
 }
 
 export function isNotFound(error: unknown): boolean {

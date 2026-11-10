@@ -30,8 +30,11 @@ function loginUrl(user: string, password: string, database: string): string {
 const superuserUrl = (database: string) =>
   loginUrl('postgres', process.env.RELAY_PG_SUPERUSER_PASSWORD ?? 'relay-dev-superuser', database);
 
-async function asSuperuser<T>(fn: (client: pg.Client) => Promise<T>): Promise<T> {
-  const admin = new pg.Client({ connectionString: superuserUrl('postgres') });
+async function asSuperuser<T>(
+  fn: (client: pg.Client) => Promise<T>,
+  database = 'postgres',
+): Promise<T> {
+  const admin = new pg.Client({ connectionString: superuserUrl(database) });
   await admin.connect();
   try {
     return await fn(admin);
@@ -94,8 +97,8 @@ describe('single-login database mode (hosted staging)', () => {
 
   it('gives the owner the SET option on both roles and keeps both roles unable to bypass RLS', async () => {
     const rows = await asSuperuser(async (admin) => {
-      const grants = await admin.query<{ role: string; can_set: boolean }>(
-        `SELECT r.rolname AS role, bool_or(m.set_option) AS can_set
+      const grants = await admin.query<{ role: string; can_set: boolean; inherits: boolean }>(
+        `SELECT r.rolname AS role, bool_or(m.set_option) AS can_set, bool_or(m.inherit_option) AS inherits
            FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid
           WHERE m.member = (SELECT oid FROM pg_roles WHERE rolname = $1)
           GROUP BY 1 ORDER BY 1`,
@@ -107,9 +110,10 @@ describe('single-login database mode (hosted staging)', () => {
       );
       return { grants: grants.rows, roles: roles.rows };
     });
+    // SET, but never INHERIT: the login gains none of the roles' privileges for its own sessions.
     expect(rows.grants).toEqual([
-      { role: 'relay_app', can_set: true },
-      { role: 'relay_worker', can_set: true },
+      { role: 'relay_app', can_set: true, inherits: false },
+      { role: 'relay_worker', can_set: true, inherits: false },
     ]);
     expect(rows.roles).toEqual([
       { rolname: 'relay_app', bypass: false },
@@ -183,4 +187,16 @@ describe('single-login database mode (hosted staging)', () => {
     );
     expect(rows.rows[0]!.n).toBe(0);
   }, 120_000);
+
+  it('refuses to continue after an interrupted seed instead of treating it as complete', async () => {
+    const seed = {
+      migrate: false,
+      storage: false,
+      seed: true,
+      fixturesDir: path.join(REPO_ROOT, 'fixtures/media'),
+    };
+    // Simulate a run that died before its last step: demo data present, completion record gone.
+    await asSuperuser((admin) => admin.query('DELETE FROM relay_demo_seed'), DATABASE);
+    await expect(bootstrapDeployment(config, seed)).rejects.toThrow(/did not finish/);
+  }, 60_000);
 });

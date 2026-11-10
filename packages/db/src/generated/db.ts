@@ -485,6 +485,12 @@ export interface PublishIntents {
   workspacePauseGeneration: number;
 }
 
+export interface RelayDemoSeed {
+  completedAt: Generated<Timestamp>;
+  onlyRow: Generated<boolean>;
+  seedVersion: string;
+}
+
 export interface RelaySchemaInfo {
   key: string;
   value: string;
@@ -689,6 +695,7 @@ export interface DB {
   "providerSim.remotePosts": ProviderSimRemotePosts;
   publishAttempts: PublishAttempts;
   publishIntents: PublishIntents;
+  relayDemoSeed: RelayDemoSeed;
   relaySchemaInfo: RelaySchemaInfo;
   sessions: Sessions;
   slotReservations: SlotReservations;

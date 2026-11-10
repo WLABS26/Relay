@@ -37,10 +37,12 @@ export interface PoolOptions {
   applicationName: string;
   onError?: (error: Error) => void;
   /**
-   * Single-login mode (hosted staging): the connection string belongs to one login role and
-   * every checked-out connection first runs `SET ROLE <role>`, so RLS policies and grants
-   * apply exactly as with a dedicated login. A failed SET ROLE destroys the connection and
-   * fails the checkout: a query can never run with the login's wider privileges.
+   * Single-login mode (hosted staging): the connection string belongs to one login role. Each
+   * connection asks the server to assume `role` as part of session start (libpq-style startup
+   * options, so the switch is part of the server session and not a statement a connection
+   * pooler could strand on another backend) and the pool verifies `current_user` before
+   * handing the connection out. A connection that is not running as `role` is destroyed and
+   * the checkout fails: a query can never run with the login's wider privileges.
    */
   role?: DatabaseRole;
   /** Keep pg's default type parsers (Graphile Worker expects them) instead of Relay's. */
@@ -53,6 +55,33 @@ type ConnectCallback = (
   done: (release?: unknown) => void,
 ) => void;
 
+/**
+ * Session settings the dedicated login roles carry through ALTER ROLE (infra/postgres). A role
+ * assumed after login does not bring its settings along, so single-login pools set them at
+ * session start together with the role.
+ */
+interface SessionSettings {
+  statementTimeout: string;
+  idleInTransactionTimeout: string;
+}
+const APP_SESSION_SETTINGS: SessionSettings = {
+  statementTimeout: '15s',
+  idleInTransactionTimeout: '30s',
+};
+const ROLE_SESSION_SETTINGS: Partial<Record<string, SessionSettings>> = {
+  relay_app: APP_SESSION_SETTINGS,
+  relay_worker: { statementTimeout: '60s', idleInTransactionTimeout: '60s' },
+};
+
+/**
+ * Startup options (`options` connection parameter) that make the server assume the role. A
+ * name outside the allow-list gets the strict settings; the server then rejects the role.
+ */
+export function roleStartupOptions(role: DatabaseRole): string {
+  const s = ROLE_SESSION_SETTINGS[role] ?? APP_SESSION_SETTINGS;
+  return `-c role=${role} -c statement_timeout=${s.statementTimeout} -c idle_in_transaction_session_timeout=${s.idleInTransactionTimeout}`;
+}
+
 class RoleAssumingPool extends pg.Pool {
   constructor(
     config: pg.PoolConfig,
@@ -64,7 +93,14 @@ class RoleAssumingPool extends pg.Pool {
   private async connectAsRole(): Promise<pg.PoolClient> {
     const client = await super.connect();
     try {
-      await client.query(`SET ROLE ${pg.escapeIdentifier(this.role)}`);
+      // The role was requested at session start; prove it took effect on this very session.
+      const { rows } = await client.query<{ me: string }>('SELECT current_user::text AS me');
+      const me = rows[0]?.me;
+      if (me !== this.role) {
+        throw new Error(
+          `database connection runs as "${me ?? 'unknown'}" instead of "${this.role}": the role requested at session start was not applied. This happens behind a connection pooler (transaction pooling) or when the server ignores startup options; use the direct connection string.`,
+        );
+      }
     } catch (error) {
       client.release(error as Error);
       throw error;
@@ -94,6 +130,7 @@ export function createPool(options: PoolOptions): pg.Pool {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
     ...(options.defaultTypes ? {} : { types: relayTypes }),
+    ...(options.role ? { options: roleStartupOptions(options.role) } : {}),
   };
   const pool = options.role ? new RoleAssumingPool(config, options.role) : new pg.Pool(config);
   // A client error (idle in the pool, or checked out between queries when the server drops

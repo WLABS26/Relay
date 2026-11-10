@@ -176,6 +176,11 @@ logs `demo data already present`.
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Vercel build: `Unsupported environment … Node.js version`                      | the build ran on Vercel's default Node 26 instead of the 22.x that `engines.node` in `apps/web/package.json` asks for | redeploy (Vercel honours `engines.node` since that field was added); if it still happens, Settings → Build and Deployment → _Node.js Version_ **22.x** |
 | web or worker exits with code 78 and a list of problems                        | a variable is missing or wrong (a missing `RELAY_ENV` applies production rules)                                       | each line names the variable; fix it and redeploy                                                                                                      |
+| the Vercel page says "This page is unavailable … MIDDLEWARE_INVOCATION_FAILED" | a build from before 2026-11-10 crashed on invalid variables                                                           | redeploy the current `main`; the page now says "Relay is not configured yet" and, with `RELAY_ENV=staging`, lists what is wrong                        |
+| the page says "Relay is not configured yet"                                    | variables incomplete or invalid                                                                                       | fix the listed variables (or, in production mode, those named in the Logs tab) and redeploy                                                            |
+| worker: `connection runs as "…" instead of "relay_app"`                        | the database address goes through a connection pooler                                                                 | use the direct connection string (`DATABASE_URL_UNPOOLED`)                                                                                             |
+| worker: `An earlier demo seed did not finish`                                  | the first seed was interrupted (redeploy, crash) and cannot resume                                                    | Neon: Branches → main → Databases → delete the database and create one with the same name; the worker seeds again on its next start                    |
+| worker: `role relay_app already exists with …`                                 | a role of that name was created by hand with extra privileges                                                         | drop it or remove the attributes as the message says, then restart                                                                                     |
 | `DATABASE_URL points at a connection pooler`                                   | only the pooled address was set                                                                                       | add `DATABASE_URL_UNPOOLED` (Neon: the connection string with _Connection pooling_ switched off)                                                       |
 | `bucket "…" is not ready`                                                      | the access key may not change bucket settings                                                                         | use the policy above, or enable versioning and add a CORS rule for the origin the message names, then restart the worker                               |
 | `/api/ready` says the database is not ok; no bootstrap lines in the worker log | the worker has not started yet, or failed                                                                             | read the worker log; it names the problem                                                                                                              |
@@ -186,13 +191,15 @@ logs `demo data already present`.
 
 - **One database login, still least privilege.** Hosted Postgres gives you one owner login.
   On start-up the worker creates `relay_app` and `relay_worker` as NOLOGIN roles without
-  `BYPASSRLS`, grants the login the right to `SET ROLE` to them, and proves the switch. Every
-  pooled connection switches role right after connecting; a connection that cannot switch is
-  rejected, never used as the owner. Row-level security stays forced on every tenant table.
-- **Direct connection only.** The role switch is session state, which transaction poolers
-  drop, so single-login mode always uses the direct host (`DATABASE_URL_UNPOOLED`) and refuses
-  an address that looks like a pooler. `RELAY_DB_POOL_MAX=3` keeps the serverless web app
-  within Neon's connection limit.
+  `BYPASSRLS`, grants the login the right to switch to them (SET, never INHERIT) and proves the
+  switch. Every pooled connection asks the server to assume its role as part of session start
+  and verifies `current_user` before it is used; a connection that is not running as its role
+  is destroyed, never used as the owner. Row-level security stays forced on every tenant table.
+- **Direct connection only.** A transaction pooler hands each statement to whatever backend
+  is free, so it cannot carry a per-session role; single-login mode therefore uses the direct
+  host (`DATABASE_URL_UNPOOLED`), refuses an address that looks like a pooler up front, and the
+  per-connection check above fails closed if one slips through. `RELAY_DB_POOL_MAX=3` keeps the
+  serverless web app within Neon's connection limit.
 - **Automatic set-up is staging-only.** `RELAY_AUTO_MIGRATE` (roles, migrations, bucket
   versioning and CORS) and `RELAY_AUTO_SEED` (demo data, once) are refused with
   `RELAY_ENV=production`, as is single-login mode. Production uses separate logins

@@ -55,7 +55,14 @@ describe('ensureStorage', () => {
     ['only a wildcard CORS rule', { versioning: true, corsOrigins: ['*'] }],
   ])('fails closed when settings cannot be applied and the bucket has %s', async (_, state) => {
     const { run } = provisioner(denied, () => Promise.resolve(state));
-    await expect(run()).rejects.toThrow(/bucket "relay-unit" is not ready \(AccessDenied/);
+    const error = await run().then(
+      () => {
+        throw new Error('expected a rejection');
+      },
+      (e: unknown) => e as Error,
+    );
+    expect(error.message).toMatch(/bucket "relay-unit" is not ready: AccessDenied/);
+    expect(error.message).toMatch(/Found: versioning (on|off), CORS origins \[/);
   });
 
   it('fails closed when the bucket cannot be inspected either, keeping the original cause', async () => {
@@ -67,6 +74,7 @@ describe('ensureStorage', () => {
       (e: unknown) => e as Error & { cause?: unknown },
     );
     expect(error.message).toMatch(/s3:PutBucketVersioning and s3:PutBucketCORS/);
+    expect(error.message).toContain('Inspecting it failed as well: AccessDenied: GetBucket');
     expect((error.cause as Error).message).toContain('s3:PutBucketCORS');
   });
 });

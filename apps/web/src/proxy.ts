@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { configGate, renderConfigErrorPage } from '@/lib/server/config-gate';
 
 /**
  * Security headers and a per-request CSP nonce for every page. Next.js applies the nonce to
@@ -6,6 +7,21 @@ import { NextResponse, type NextRequest } from 'next/server';
  * 'unsafe-inline' for styles only; scripts stay strictly nonce-bound with 'strict-dynamic'.
  */
 export function proxy(request: NextRequest) {
+  // Invalid configuration: a readable page instead of the platform's generic error.
+  const gate = configGate();
+  if (!gate.ok) {
+    return new NextResponse(renderConfigErrorPage(gate), {
+      status: 503,
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'retry-after': '60',
+        'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'x-content-type-options': 'nosniff',
+        'x-frame-options': 'DENY',
+      },
+    });
+  }
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
   const isDev = process.env.NODE_ENV === 'development';
   const https = (process.env.RELAY_PUBLIC_URL ?? '').startsWith('https://');
