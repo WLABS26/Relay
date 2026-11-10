@@ -16,6 +16,43 @@ needed for a meaningful test. Everything stays **simulated**: no real platform i
 This is a **staging** deployment. Production mode is intentionally refused by this build until
 the KMS key provider ships (M3); staging runs with a local encryption keyring and demo sign-in.
 
+## Quick path (no prior experience assumed)
+
+Six things, in this order. Each one is a few clicks or one pasted command.
+
+1. **Vercel project.** Vercel → Add New → Project → Import `WLABS26/Relay`. Before the first
+   deploy, open the project's **Settings → General**: _Root Directory_ `apps/web`, _Framework
+   Preset_ Next.js, _Node.js Version_ **22.x**. (The repository also declares Node 22 in
+   `apps/web/package.json`, which is why a build on Node 26 was refused.) Deploy: the build
+   should finish green. The site will answer, but sign-in cannot work until step 5.
+2. **Database.** Create a free Neon project (neon.tech) → open its SQL Editor → paste
+   `infra/postgres/managed-roles.sql` with three passwords you generated (a password manager's
+   generator is fine) → run it. From Neon's _Connection details_ copy two URLs: the **direct**
+   one and the **pooled** one. Build three connection strings by putting each role's name and
+   password into them:
+   - `DATABASE_URL_MIGRATOR` = `relay_migrator` on the **direct** URL
+   - `DATABASE_URL_APP` = `relay_app` on the **pooled** URL
+   - `DATABASE_URL_WORKER` = `relay_worker` on the **direct** URL
+3. **Tables.** GitHub → the repository → Settings → Environments → New environment `staging` →
+   Add environment secret `DATABASE_URL_MIGRATOR` (the migrator string). Then Actions →
+   _Migrate database_ → Run workflow → environment `staging` → Run. Green = tables created.
+4. **File storage.** AWS → S3 → Create bucket (private; _Bucket Versioning: Enable_). In the
+   bucket's _Permissions → CORS_, paste the JSON from section 2 with your Vercel URL. IAM →
+   create a user with access to that bucket only → create an access key. Note the bucket name,
+   region, access key and secret.
+5. **Variables.** Vercel → project → Settings → Environment Variables → add every row of the
+   table in section 3 (web column) → Deployments → Redeploy. Then open
+   `https://<your-app>.vercel.app/api/ready`: it must say `"database":"ok"` and `"storage":"ok"`.
+6. **Worker and demo data.** The worker cannot run on Vercel. On Railway or Render, create a
+   service from the GitHub repository with Dockerfile `infra/docker/worker.Dockerfile` (build
+   context: repository root), add the same variables (worker column) plus
+   `RELAY_WORKER_HEALTH_HOST=0.0.0.0`, and set its health check to port 3101 path `/healthz`.
+   Finally seed the demo accounts once, from a laptop with Node 22 and the same variables in a
+   local `.env`: `pnpm install` then `pnpm db:seed`. Sign in at your Vercel URL and follow
+   `docs/testing-guide.md` section 3.
+
+If something fails, the detailed sections below explain each piece.
+
 ## 0. Decide and prepare (operator)
 
 1. **Who may see it.** With demo mode on, anyone who finds the URL can sign in as a demo user
