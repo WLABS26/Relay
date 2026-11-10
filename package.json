@@ -5,7 +5,7 @@
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WLABS26/relay.git"
+    "url": "git+https://github.com/WLABS26/Relay.git"
   },
   "type": "module",
   "packageManager": "pnpm@10.28.0",

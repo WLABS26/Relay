@@ -4,7 +4,7 @@ Tracking document required by `docs/RELAY_BUILD_SPEC.md` §1. Update it at the e
 milestone session. After an interruption, read this file and `git log`/`git diff` before
 resuming; do not re-scaffold completed work.
 
-- **Branch:** `main`; GitHub `WLABS26/relay` (the repository is created by the owner; this
+- **Branch:** `main`; GitHub [`WLABS26/Relay`](https://github.com/WLABS26/Relay) (the repository is created by the owner; this
   session can only push to an existing one). CI: `.github/workflows/ci.yml`.
 - **Last updated:** 2026-11-09
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
