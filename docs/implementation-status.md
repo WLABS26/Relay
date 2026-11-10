@@ -6,9 +6,10 @@ resuming; do not re-scaffold completed work.
 
 - **Branch:** `main`; GitHub [`WLABS26/Relay`](https://github.com/WLABS26/Relay) (the repository is created by the owner; this
   session can only push to an existing one). CI: `.github/workflows/ci.yml`.
-- **Last updated:** 2026-11-09
+- **Last updated:** 2026-11-10
 - **Milestones complete:** M0, M1 (acceptance gates verified locally; see evidence)
 - **Try it:** [`docs/testing-guide.md`](testing-guide.md) (GitHub Codespaces via `.devcontainer/`, or locally)
+- **Published:** pushed to GitHub on 2026-11-10; CI run [42786822356](https://github.com/WLABS26/Relay/actions/runs/42786822356) on `4c5f4fa` passed all three jobs (lint/types/unit, integration + end-to-end on a clean runner, container images). The repository is **public**. Hosted staging is prepared but not deployed: see [`docs/runbooks/vercel-staging.md`](runbooks/vercel-staging.md).
 - **Next milestone:** M2 · Source to clip (see [Next runnable task](#next-runnable-task))
 
 > Every connection in this build is **simulated**. A simulator success demonstrates workflow
@@ -159,6 +160,8 @@ None of these can be completed from code; each needs a separate operator action.
 - The web server exits immediately on SIGTERM without draining. All mutations are transactional
   and idempotent, so an interrupted request rolls back and can be retried safely.
 - The worker image is about 1 GB, mostly Ubuntu's FFmpeg codec libraries.
+- The first CI run on GitHub failed in the end-to-end gate between about 07:00 and 11:00 Berlin time: the seed had placed a sample post within the 2-hour minimum gap of \"now\" on the account the gate schedules. Fixed in the seed (`5c3346f`); verified locally at that hour and by CI.
+- Vercel can host only the web app; the worker, PostgreSQL and object storage need other hosts, and the Vercel connector available to this session may not create projects (403), so the project is created by the owner.
 
 ## Commands verified
 
