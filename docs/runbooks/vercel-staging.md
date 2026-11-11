@@ -142,9 +142,10 @@ because the worker creates the tables.
 
 **Render:** Dashboard → **New** → **Background Worker** → connect GitHub and pick
 `WLABS26/Relay` → Language **Docker** → _Dockerfile Path_ `./infra/docker/worker.Dockerfile`
-(build context stays the repository root) → _Compute_: the smallest plan, `0.5c-512mb` (Render's
-former "Starter", about 7 USD per month; background workers have no free plan), is enough for the
-demo data → **Environment Variables**: the same ten rows as step 4 plus the four below → create.
+(build context stays the repository root) → _Compute_: pick `1c-2g` (Render's
+former "Standard"; background workers have no free plan). The first start encodes demo videos
+with FFmpeg and can run out of memory on the 512 MB plan `0.5c-512mb`; once the demo data is
+loaded, that smaller plan is enough → **Environment Variables**: the same ten rows as step 4 plus the four below → create.
 The first build takes several minutes because the image contains FFmpeg.
 
 | Variable                   | Value                                                  |
