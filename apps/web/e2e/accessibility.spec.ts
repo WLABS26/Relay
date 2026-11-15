@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers';
+import { gotoCalendarWithPosts, signIn } from './helpers';
 
 test.describe('keyboard and theme', () => {
   test('dialogs trap focus, close on Escape and restore focus to the opener', async ({ page }) => {
     await signIn(page, 'Mara Lindqvist');
-    await page.goto('/w/fernhill/calendar');
+    await gotoCalendarWithPosts(page, 'fernhill');
     const move = page.getByRole('button', { name: /^Move / }).first();
     await move.focus();
     await page.keyboard.press('Enter');

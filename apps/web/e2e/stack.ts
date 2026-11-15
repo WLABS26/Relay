@@ -42,7 +42,9 @@ await new ObjectStorage(config.storage).ensureBucket([
   `http://127.0.0.1:${E2E_PORT}`,
 ]);
 log(`bucket ${E2E_BUCKET} ready`);
-await seedDemo(config, { log: (m) => log(`seed: ${m}`) });
+// No quiet hours on the main sample page: the suite publishes "as soon as possible" and must
+// pass at any hour, including the night in the page's time zone.
+await seedDemo(config, { log: (m) => log(`seed: ${m}`), withoutQuietHours: true });
 
 const children: ChildProcess[] = [];
 const start = (name: string, command: string, args: string[], cwd: string) => {

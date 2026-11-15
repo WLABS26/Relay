@@ -4,7 +4,12 @@ import path from 'node:path';
 import { type RelayConfig } from '@relay/config';
 import { REPO_ROOT } from '@relay/config/dotenv';
 import { withAuthBootstrap, withTenant } from '@relay/db';
-import { AGE_BUCKETS, ManualClock, type DestinationState } from '@relay/domain';
+import {
+  AGE_BUCKETS,
+  DEFAULT_PUBLISHING_RULES,
+  ManualClock,
+  type DestinationState,
+} from '@relay/domain';
 import { generateFixtures } from '@relay/media/fixtures';
 import type { SimulatorProfile } from '@relay/providers';
 import type { AuthenticatedUser } from './access';
@@ -14,7 +19,7 @@ import { createServiceContext, type ServiceContext } from './context';
 import { acceptInvitation, inviteMember } from './members';
 import { processAssetProbe } from './media-pipeline';
 import { refreshMetrics } from './metrics';
-import { createPage } from './pages';
+import { createPage, putPublishingRules } from './pages';
 import { createPost, getPostDetail } from './posts';
 import { advancePublish, reconcilePublish } from './publishing';
 import { recommendSlotsFor, scheduleDestination } from './scheduling';
@@ -258,9 +263,38 @@ export async function demoSeedState(ctx: ServiceContext): Promise<DemoSeedState>
   return user ? 'incomplete' : 'absent';
 }
 
+/**
+ * The latest instant at or before `at` that falls in the demo pages' daytime (09:00 to 20:59
+ * Europe/Berlin). Sample history is published "as soon as possible" at a past instant; taken
+ * at the same time of day as a seed that runs at night, that instant would sit in the pages'
+ * quiet hours (23:00 to 07:00) and the seed would fail.
+ */
+export function demoDaytime(at: Date): Date {
+  const hour = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Berlin',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  });
+  let t = at.getTime();
+  for (let i = 0; i < 48; i++) {
+    const h = Number(hour.format(new Date(t)));
+    if (h >= 9 && h <= 20) break;
+    t -= 30 * 60_000;
+  }
+  return new Date(t);
+}
+
 export async function seedDemo(
   config: RelayConfig,
-  options: { log?: (m: string) => void; fixturesDir?: string } = {},
+  options: {
+    log?: (m: string) => void;
+    fixturesDir?: string;
+    /**
+     * Give the main sample page no quiet hours. For automated browser tests, which publish
+     * "as soon as possible" and must pass at any time of day; the demo keeps the default.
+     */
+    withoutQuietHours?: boolean;
+  } = {},
 ): Promise<SeedSummary> {
   const log = options.log ?? (() => {});
   if (!config.demoMode || config.isProduction)
@@ -318,6 +352,16 @@ export async function seedDemo(
       meta,
       { isSample: true },
     );
+    if (options.withoutQuietHours) {
+      await putPublishingRules(
+        c.app,
+        users.mara,
+        fernhill.id,
+        coffee.id,
+        { expectedRevision: 1, rules: { ...DEFAULT_PUBLISHING_RULES, quietHours: [] } },
+        meta,
+      );
+    }
     const trail = await createPage(
       c.app,
       users.mara,
@@ -481,7 +525,7 @@ export async function seedDemo(
       { daysAgo: 4, title: 'Sample · Tasting notes', dest: [coffeeYt] },
     ];
     for (const h of history) {
-      clock.set(new Date(realNow.getTime() - h.daysAgo * 86_400_000));
+      clock.set(demoDaytime(new Date(realNow.getTime() - h.daysAgo * 86_400_000)));
       const p = await approvedPost(c, users.mara, fernhill.id, {
         pageId: coffee.id,
         title: h.title,
@@ -596,7 +640,7 @@ export async function seedDemo(
       assetIds: [labVideo],
       destinationIds: [labReject, labAmbiguous, labLost],
     });
-    clock.set(new Date(realNow.getTime() - 2 * 3600_000));
+    clock.set(demoDaytime(new Date(realNow.getTime() - 2 * 3600_000)));
     for (const d of labPost.destinations) {
       await scheduleDestination(
         c.app,

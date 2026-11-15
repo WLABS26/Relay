@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers';
+import { gotoCalendarWithPosts, signIn } from './helpers';
 
 test('the calendar switches to an agenda on small screens and keeps Move available', async ({
   page,
 }) => {
   await signIn(page, 'Mara Lindqvist');
-  await page.goto('/w/fernhill/calendar');
+  await gotoCalendarWithPosts(page, 'fernhill');
   await expect(page.getByRole('list', { name: 'Week view' })).toBeHidden();
   const agenda = page.getByRole('region', { name: 'Agenda' });
   await expect(agenda).toBeVisible();
