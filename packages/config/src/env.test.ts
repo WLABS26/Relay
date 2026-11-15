@@ -317,6 +317,21 @@ describe('parseConfig', () => {
     }
   });
 
+  it('derives a 32-byte key from a long random secret that is not a ready-made key', () => {
+    const secret = Buffer.alloc(48, 9).toString('base64'); // 64 characters, 48 bytes
+    const a = parseConfig({ ...local, RELAY_ENCRYPTION_KEYS: `k1:${secret}` }).encryption.keyring;
+    const again = parseConfig({ ...local, RELAY_ENCRYPTION_KEYS: `k1:${secret}` }).encryption
+      .keyring;
+    const otherId = parseConfig({ ...local, RELAY_ENCRYPTION_KEYS: `k2:${secret}` }).encryption
+      .keyring;
+    expect(a[0]!.key).toHaveLength(32);
+    expect(a[0]!.key.equals(again[0]!.key)).toBe(true); // web and worker agree
+    expect(a[0]!.key.equals(otherId[0]!.key)).toBe(false); // bound to the key id
+    expect(a[0]!.key.equals(Buffer.from(secret, 'base64').subarray(0, 32))).toBe(false);
+    // A ready-made 32-byte key is used as is.
+    expect(parseConfig(local).encryption.keyring[0]!.key.equals(Buffer.alloc(32, 7))).toBe(true);
+  });
+
   it('recognises config errors across module instances', () => {
     const foreign = Object.assign(new Error('x'), { name: 'ConfigError', problems: ['p'] });
     expect(isConfigError(foreign)).toBe(true);

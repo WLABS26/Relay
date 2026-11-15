@@ -49,7 +49,8 @@ $b = New-Object byte[] 32; (New-Object System.Security.Cryptography.RNGCryptoSer
 ```
 
 The first value is `RELAY_SESSION_SECRET`. The second, which starts with `k1:`, is
-`RELAY_ENCRYPTION_KEYS`.
+`RELAY_ENCRYPTION_KEYS`. If you mix them up it still works: any random value of at least 32
+characters is accepted after `k1:`, as long as the web app and the worker get the same one.
 
 ### 2. Database (Neon, from inside Vercel)
 

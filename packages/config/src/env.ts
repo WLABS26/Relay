@@ -1,3 +1,4 @@
+import { hkdfSync } from 'node:crypto';
 import { z } from 'zod';
 
 /**
@@ -280,17 +281,32 @@ function parseKeyring(raw: string | undefined, problems: string[]): KeyringEntry
       continue;
     }
     const kid = part.slice(0, idx);
-    const key = Buffer.from(part.slice(idx + 1), 'base64');
+    const material = part.slice(idx + 1);
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(kid)) {
       problems.push(`RELAY_ENCRYPTION_KEYS key id "${kid}" is not a valid identifier`);
       continue;
     }
+    let key = Buffer.from(material, 'base64');
     if (key.length !== 32) {
-      // Lengths only, never the value: enough to tell a truncated paste from a pasted command.
-      problems.push(
-        `RELAY_ENCRYPTION_KEYS key "${kid}" must decode to exactly 32 bytes: after "${kid}:" there must be 44 characters ending in "=" (the output of \`openssl rand -base64 32\`, not the command itself); found ${part.length - idx - 1} characters decoding to ${key.length} bytes`,
+      // Not a ready-made 32-byte key. A long random secret of another length (a 48-byte value,
+      // a password manager's output) is still good key material: derive the 32-byte key from
+      // it, bound to the key id. Anything shorter than 32 characters is refused. The local
+      // keyring is never allowed in production, which requires KMS.
+      if (material.length < 32) {
+        problems.push(
+          `RELAY_ENCRYPTION_KEYS key "${kid}" must decode to exactly 32 bytes (the output of \`openssl rand -base64 32\`) or be a random secret of at least 32 characters; found ${material.length} characters`,
+        );
+        continue;
+      }
+      key = Buffer.from(
+        hkdfSync(
+          'sha256',
+          Buffer.from(material, 'utf8'),
+          Buffer.alloc(0),
+          `relay-local-keyring-v1:${kid}`,
+          32,
+        ),
       );
-      continue;
     }
     entries.push({ kid, key });
   }
