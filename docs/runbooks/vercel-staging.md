@@ -93,7 +93,7 @@ default version (PostgreSQL 18); Relay runs on 16 or newer and its tests run aga
         "s3:GetBucketCORS",
         "s3:PutBucketCORS"
       ],
-      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME"
+      "Resource": "arn:aws:s3:::relay-staging-cassanikyle"
     },
     {
       "Sid": "Objects",
