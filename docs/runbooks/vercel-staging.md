@@ -107,7 +107,7 @@ default version (PostgreSQL 18); Relay runs on 16 or newer and its tests run aga
         "s3:AbortMultipartUpload",
         "s3:ListMultipartUploadParts"
       ],
-      "Resource": "arn:aws:s3:::YOUR-BUCKET-NAME/*"
+      "Resource": "arn:aws:s3:::relay-staging-cassanikyle/*"
     }
   ]
 }
