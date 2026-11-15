@@ -297,6 +297,20 @@ describe('parseConfig', () => {
     });
   });
 
+  it('accepts values pasted with surrounding quotation marks, as hosting dashboards store them', () => {
+    const c = parseConfig({
+      ...local,
+      RELAY_ENCRYPTION_KEYS: `"k1:${KEY}"`,
+      RELAY_ENV: "'staging'",
+      RELAY_DEMO_MODE: '"true"',
+    });
+    expect(c.encryption.keyring).toEqual([{ kid: 'k1', key: Buffer.alloc(32, 7) }]);
+    expect(c).toMatchObject({ env: 'staging', demoMode: true });
+    expect(resolveDeploymentEnv({ NODE_ENV: 'production', RELAY_ENV: '"staging"' })).toBe(
+      'staging',
+    );
+  });
+
   it('recognises config errors across module instances', () => {
     const foreign = Object.assign(new Error('x'), { name: 'ConfigError', problems: ['p'] });
     expect(isConfigError(foreign)).toBe(true);

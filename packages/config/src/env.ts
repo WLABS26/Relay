@@ -314,7 +314,7 @@ function pinSslMode<T extends string | undefined>(url: T): T {
  * successful parse: `RELAY_ENV` when valid, else production whenever NODE_ENV says so.
  */
 export function resolveDeploymentEnv(source: Record<string, string | undefined>): DeploymentEnv {
-  const explicit = source.RELAY_ENV?.trim();
+  const explicit = unquote(source.RELAY_ENV)?.trim();
   if (explicit && (DEPLOYMENT_ENVS as readonly string[]).includes(explicit))
     return explicit as DeploymentEnv;
   return source.NODE_ENV?.trim() === 'production' ? 'production' : 'local';
@@ -336,7 +336,19 @@ function containsDevSecret(value: string | undefined): boolean {
 }
 
 /** Validate and normalise the environment. Throws ConfigError listing every problem. */
-export function parseConfig(source: Record<string, string | undefined>): RelayConfig {
+/**
+ * Hosting dashboards store values literally, so a value pasted as "k1:…" keeps its quotation
+ * marks (a .env file would have stripped them). Remove one matching pair around a value.
+ */
+function unquote(value: string | undefined): string | undefined {
+  const v = value?.trim();
+  if (v && v.length >= 2 && (v[0] === '"' || v[0] === "'") && v.at(-1) === v[0])
+    return v.slice(1, -1);
+  return value;
+}
+
+export function parseConfig(rawSource: Record<string, string | undefined>): RelayConfig {
+  const source = Object.fromEntries(Object.entries(rawSource).map(([k, v]) => [k, unquote(v)]));
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
     throw new ConfigError(
