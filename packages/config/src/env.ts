@@ -286,7 +286,10 @@ function parseKeyring(raw: string | undefined, problems: string[]): KeyringEntry
       continue;
     }
     if (key.length !== 32) {
-      problems.push(`RELAY_ENCRYPTION_KEYS key "${kid}" must decode to exactly 32 bytes`);
+      // Lengths only, never the value: enough to tell a truncated paste from a pasted command.
+      problems.push(
+        `RELAY_ENCRYPTION_KEYS key "${kid}" must decode to exactly 32 bytes: after "${kid}:" there must be 44 characters ending in "=" (the output of \`openssl rand -base64 32\`, not the command itself); found ${part.length - idx - 1} characters decoding to ${key.length} bytes`,
+      );
       continue;
     }
     entries.push({ kid, key });
