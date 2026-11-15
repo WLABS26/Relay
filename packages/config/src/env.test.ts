@@ -309,6 +309,12 @@ describe('parseConfig', () => {
     expect(resolveDeploymentEnv({ NODE_ENV: 'production', RELAY_ENV: '"staging"' })).toBe(
       'staging',
     );
+    // One stray mark, or typographic quotes from an editor.
+    for (const value of [`"k1:${KEY}`, `k1:${KEY}"`, `\u201Ck1:${KEY}\u201D`, ` "k1:${KEY}" `]) {
+      expect(
+        parseConfig({ ...local, RELAY_ENCRYPTION_KEYS: value }).encryption.keyring[0]?.kid,
+      ).toBe('k1');
+    }
   });
 
   it('recognises config errors across module instances', () => {

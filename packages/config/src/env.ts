@@ -338,13 +338,17 @@ function containsDevSecret(value: string | undefined): boolean {
 /** Validate and normalise the environment. Throws ConfigError listing every problem. */
 /**
  * Hosting dashboards store values literally, so a value pasted as "k1:…" keeps its quotation
- * marks (a .env file would have stripped them). Remove one matching pair around a value.
+ * marks (a .env file would have stripped them), sometimes only one of them, sometimes the
+ * typographic kind an editor substituted. Remove quotation marks at either end of a value;
+ * no Relay setting legitimately starts or ends with one.
  */
 function unquote(value: string | undefined): string | undefined {
-  const v = value?.trim();
-  if (v && v.length >= 2 && (v[0] === '"' || v[0] === "'") && v.at(-1) === v[0])
-    return v.slice(1, -1);
-  return value;
+  if (value === undefined) return value;
+  return value
+    .trim()
+    .replace(/^["'\u201C\u201D\u2018\u2019]+/, '')
+    .replace(/["'\u201C\u201D\u2018\u2019]+$/, '')
+    .trim();
 }
 
 export function parseConfig(rawSource: Record<string, string | undefined>): RelayConfig {
