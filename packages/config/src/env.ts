@@ -55,6 +55,60 @@ const optionalString = z
   .transform((v) => (v === '' ? undefined : v))
   .optional();
 
+/** AWS region codes by the city name the console shows next to them. */
+const AWS_REGION_BY_CITY: Record<string, string> = {
+  'n. virginia': 'us-east-1',
+  virginia: 'us-east-1',
+  ohio: 'us-east-2',
+  'n. california': 'us-west-1',
+  california: 'us-west-1',
+  oregon: 'us-west-2',
+  'canada central': 'ca-central-1',
+  montreal: 'ca-central-1',
+  calgary: 'ca-west-1',
+  'sao paulo': 'sa-east-1',
+  'são paulo': 'sa-east-1',
+  ireland: 'eu-west-1',
+  london: 'eu-west-2',
+  paris: 'eu-west-3',
+  frankfurt: 'eu-central-1',
+  zurich: 'eu-central-2',
+  stockholm: 'eu-north-1',
+  milan: 'eu-south-1',
+  spain: 'eu-south-2',
+  'cape town': 'af-south-1',
+  bahrain: 'me-south-1',
+  uae: 'me-central-1',
+  'tel aviv': 'il-central-1',
+  mumbai: 'ap-south-1',
+  hyderabad: 'ap-south-2',
+  singapore: 'ap-southeast-1',
+  sydney: 'ap-southeast-2',
+  jakarta: 'ap-southeast-3',
+  melbourne: 'ap-southeast-4',
+  tokyo: 'ap-northeast-1',
+  seoul: 'ap-northeast-2',
+  osaka: 'ap-northeast-3',
+  'hong kong': 'ap-east-1',
+};
+
+/**
+ * Storage region as a code. The AWS console shows "Europe (Frankfurt) eu-central-1", and it is
+ * easy to paste the name instead of the code: take a code if the value contains one, else
+ * recognise the city. Anything else is passed through unchanged (other S3-compatible stores
+ * use their own region names) and reported by the storage client if it is unusable.
+ */
+function normaliseRegion(value: string): string {
+  const v = value.trim();
+  const code = /\b[a-z]{2}(?:-gov)?-[a-z]+-\d\b/.exec(v.toLowerCase());
+  if (code) return code[0];
+  const lower = v.toLowerCase();
+  const city = Object.keys(AWS_REGION_BY_CITY)
+    .sort((a, b) => b.length - a.length)
+    .find((name) => lower.includes(name));
+  return city ? AWS_REGION_BY_CITY[city]! : v;
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   RELAY_ENV: z.enum(DEPLOYMENT_ENVS).optional(),
@@ -86,7 +140,7 @@ const envSchema = z.object({
   // Storage
   S3_ENDPOINT: optionalString,
   S3_PUBLIC_ENDPOINT: optionalString,
-  S3_REGION: z.string().default('us-east-1'),
+  S3_REGION: z.string().default('us-east-1').transform(normaliseRegion),
   S3_BUCKET: z.string().min(3),
   S3_ACCESS_KEY_ID: optionalString,
   S3_SECRET_ACCESS_KEY: optionalString,

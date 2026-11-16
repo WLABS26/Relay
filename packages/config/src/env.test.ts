@@ -340,6 +340,17 @@ describe('parseConfig', () => {
     ]);
   });
 
+  it('turns a pasted AWS region name into its code and leaves other values alone', () => {
+    const region = (S3_REGION: string) => parseConfig({ ...local, S3_REGION }).storage.region;
+    expect(region('AWS Europe Central 1 (Frankfurt)')).toBe('eu-central-1');
+    expect(region('Europe (Frankfurt) eu-central-1')).toBe('eu-central-1');
+    expect(region('US East (N. Virginia)')).toBe('us-east-1');
+    expect(region('US West (N. California)')).toBe('us-west-1');
+    expect(region(' eu-west-3 ')).toBe('eu-west-3');
+    expect(region('auto')).toBe('auto');
+    expect(parseConfig(local).storage.region).toBe('us-east-1');
+  });
+
   it('recognises config errors across module instances', () => {
     const foreign = Object.assign(new Error('x'), { name: 'ConfigError', problems: ['p'] });
     expect(isConfigError(foreign)).toBe(true);
