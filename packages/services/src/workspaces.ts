@@ -1,7 +1,8 @@
 import { sql, withTenant, withUser } from '@relay/db';
 import { AppError, createWorkspaceSchema, normalizeTimeZone, type Role } from '@relay/domain';
 import { appendAudit } from './audit';
-import { authorize, inWorkspace, memberActor, type AuthenticatedUser } from './access';
+import { authorize, inWorkspace, loadMember, memberActor, type AuthenticatedUser } from './access';
+import { listPagesFor } from './pages';
 import type { RequestMeta, ServiceContext } from './context';
 
 export interface WorkspaceSummary {
@@ -137,6 +138,58 @@ export async function getWorkspace(
       .where('id', '=', workspaceId)
       .executeTakeFirstOrThrow();
     return { workspace: ws, member };
+  });
+}
+
+/**
+ * Everything the application shell needs for one workspace URL, in a single transaction:
+ * the user's workspaces (which also resolves the slug), the verified membership, the workspace
+ * row and the visible pages. The separate calls cost four transactions and three pooled
+ * connections per page view, which dominates response time when the database is not next to
+ * the web server. The slug is only a locator; membership is verified by `loadMember` under the
+ * tenant context exactly as in `inWorkspace`, and non-members get not_found.
+ */
+export async function loadWorkspaceShell(
+  ctx: ServiceContext,
+  user: AuthenticatedUser,
+  slug: string,
+) {
+  if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new AppError('not_found', 'Workspace not found');
+  return withUser(ctx.db, user.userId, async (tx) => {
+    const rows = await tx
+      .selectFrom('workspaceMemberships as m')
+      .innerJoin('workspaces as w', 'w.id', 'm.workspaceId')
+      .select([
+        'w.id',
+        'w.slug',
+        'w.name',
+        'm.role',
+        'w.isDemo',
+        'w.timezone',
+        'w.weekStart',
+        'w.pausedAt',
+      ])
+      .where('m.userId', '=', user.userId)
+      .orderBy('w.name')
+      .execute();
+    const workspaces: WorkspaceSummary[] = rows.map((r) => ({
+      ...r,
+      role: r.role as Role,
+      weekStart: r.weekStart as 'monday' | 'sunday',
+    }));
+    const current = workspaces.find((w) => w.slug === slug);
+    if (!current) throw new AppError('not_found', 'Workspace not found');
+    // Enter the tenant for the rest of this transaction (transaction-local, like withTenant).
+    await sql`SELECT set_config('relay.workspace_id', ${current.id}, true)`.execute(tx);
+    const member = await loadMember(tx, current.id, user);
+    authorize(member, 'workspace.view');
+    const workspace = await tx
+      .selectFrom('workspaces')
+      .selectAll()
+      .where('id', '=', current.id)
+      .executeTakeFirstOrThrow();
+    const { pages } = await listPagesFor(tx, member);
+    return { workspace, member, pages, workspaces };
   });
 }
 

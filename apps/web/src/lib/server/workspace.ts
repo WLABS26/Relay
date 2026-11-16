@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 import { isAppError } from '@relay/domain';
-import { getWorkspace, listMyWorkspaces, listPages, resolveWorkspaceSlug } from '@relay/services';
+import { loadWorkspaceShell } from '@relay/services';
 import { webContext } from './context';
 import { requireSession } from './session';
 
@@ -13,12 +13,11 @@ export const loadWorkspace = cache(async (slug: string) => {
   const session = await requireSession();
   const ctx = webContext();
   try {
-    const workspaceId = await resolveWorkspaceSlug(ctx, session.user, slug);
-    const [{ workspace, member }, { pages }, workspaces] = await Promise.all([
-      getWorkspace(ctx, session.user, workspaceId),
-      listPages(ctx, session.user, workspaceId),
-      listMyWorkspaces(ctx, session.user),
-    ]);
+    const { workspace, member, pages, workspaces } = await loadWorkspaceShell(
+      ctx,
+      session.user,
+      slug,
+    );
     return { session, ctx, user: session.user, workspace, member, pages, workspaces };
   } catch (error) {
     if (isAppError(error) && error.code === 'not_found') notFound();

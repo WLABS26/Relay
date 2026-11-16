@@ -15,7 +15,7 @@ import {
   requirePage,
   type AuthenticatedUser,
 } from './access';
-import { thumbnailUrls } from './assets';
+import { thumbnailUrlsIn } from './assets';
 import type { ServiceContext } from './context';
 
 /**
@@ -107,10 +107,10 @@ export async function getCalendar(
         visible.length ? visible : ['00000000-0000-0000-0000-000000000000'],
       );
     const rows = await q.execute();
-    const thumbs = await thumbnailUrls(
+    const thumbs = await thumbnailUrlsIn(
       ctx,
-      user,
-      workspaceId,
+      tx,
+      member,
       rows.map((r) => r.assetId).filter((x): x is string => Boolean(x)),
     ).catch(() => ({}) as Record<string, string>);
     const items = rows.map((r) => {

@@ -1,5 +1,12 @@
+import type { Tx } from '@relay/db';
 import { AppError } from '@relay/domain';
-import { accessiblePageIds, authorize, inWorkspace, type AuthenticatedUser } from './access';
+import {
+  accessiblePageIds,
+  authorize,
+  inWorkspace,
+  type AuthenticatedUser,
+  type Member,
+} from './access';
 import type { ServiceContext } from './context';
 
 export type MediaUrlVariant = 'thumbnail' | 'proxy' | 'original';
@@ -160,23 +167,38 @@ export async function thumbnailUrls(
   assetIds: string[],
 ): Promise<Record<string, string>> {
   if (assetIds.length === 0) return {};
-  const rows = await inWorkspace(ctx, user, workspaceId, async (tx, member) => {
-    const visible = accessiblePageIds(member);
-    let q = tx
-      .selectFrom('mediaVariants as v')
-      .innerJoin('mediaAssets as a', 'a.id', 'v.assetId')
-      .select(['a.id', 'a.pageId', 'v.objectKey', 'v.objectVersionId', 'v.mime'])
-      .where('a.id', 'in', [...new Set(assetIds)])
-      .where('a.status', '=', 'ready')
-      .where('v.kind', '=', 'thumbnail');
-    if (visible)
-      q = q.where(
-        'a.pageId',
-        'in',
-        visible.length ? visible : ['00000000-0000-0000-0000-000000000000'],
-      );
-    return q.execute();
-  });
+  return inWorkspace(ctx, user, workspaceId, (tx, member) =>
+    thumbnailUrlsIn(ctx, tx, member, assetIds),
+  );
+}
+
+/**
+ * Signed thumbnail URLs for assets the member can see, inside the caller's tenant transaction.
+ * Read models that are already in a transaction use this instead of `thumbnailUrls`, which
+ * would open a second transaction on a second pooled connection while the first is held.
+ */
+export async function thumbnailUrlsIn(
+  ctx: ServiceContext,
+  tx: Tx,
+  member: Member,
+  assetIds: string[],
+): Promise<Record<string, string>> {
+  if (assetIds.length === 0) return {};
+  const visible = accessiblePageIds(member);
+  let q = tx
+    .selectFrom('mediaVariants as v')
+    .innerJoin('mediaAssets as a', 'a.id', 'v.assetId')
+    .select(['a.id', 'a.pageId', 'v.objectKey', 'v.objectVersionId', 'v.mime'])
+    .where('a.id', 'in', [...new Set(assetIds)])
+    .where('a.status', '=', 'ready')
+    .where('v.kind', '=', 'thumbnail');
+  if (visible)
+    q = q.where(
+      'a.pageId',
+      'in',
+      visible.length ? visible : ['00000000-0000-0000-0000-000000000000'],
+    );
+  const rows = await q.execute();
   const out: Record<string, string> = {};
   await Promise.all(
     rows.map(async (r) => {

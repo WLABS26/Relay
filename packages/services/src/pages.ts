@@ -16,6 +16,7 @@ import {
   memberActor,
   requirePage,
   type AuthenticatedUser,
+  type Member,
 } from './access';
 import { appendAudit } from './audit';
 import type { RequestMeta, ServiceContext } from './context';
@@ -39,7 +40,12 @@ export async function loadRules(
 }
 
 export async function listPages(ctx: ServiceContext, user: AuthenticatedUser, workspaceId: string) {
-  return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
+  return inWorkspace(ctx, user, workspaceId, (tx, member) => listPagesFor(tx, member));
+}
+
+/** The pages a verified member can see, with their destinations (inside a tenant transaction). */
+export async function listPagesFor(tx: Tx, member: Member) {
+  {
     authorize(member, 'workspace.view');
     const visible = accessiblePageIds(member);
     let q = tx
@@ -92,7 +98,7 @@ export async function listPages(ctx: ServiceContext, user: AuthenticatedUser, wo
         destinations: destinations.filter((d) => d.pageId === p.id),
       })),
     };
-  });
+  }
 }
 
 export async function createPage(

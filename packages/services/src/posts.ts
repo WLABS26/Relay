@@ -28,7 +28,7 @@ import {
   loadRevisionBundle,
   type DestinationTarget,
 } from './intents';
-import { thumbnailUrls } from './assets';
+import { thumbnailUrlsIn } from './assets';
 
 /**
  * Posts and immutable revisions. A revision captures media versions (ordered), base copy,
@@ -505,10 +505,10 @@ export async function listPosts(
           .where('p.id', 'in', ids)
           .execute()
       : [];
-    const thumbs = await thumbnailUrls(
+    const thumbs = await thumbnailUrlsIn(
       ctx,
-      user,
-      workspaceId,
+      tx,
+      member,
       firstMedia.map((m) => m.assetId),
     ).catch(() => ({}) as Record<string, string>);
     const items = posts.map((p) => {
@@ -719,10 +719,10 @@ export async function getPostDetail(
       .where('r.postId', '=', postId)
       .orderBy('r.revisionNumber', 'desc')
       .execute();
-    const thumbs = await thumbnailUrls(
+    const thumbs = await thumbnailUrlsIn(
       ctx,
-      user,
-      workspaceId,
+      tx,
+      member,
       bundle.media.map((m) => m.assetId),
     ).catch(() => ({}) as Record<string, string>);
     return {
