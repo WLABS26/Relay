@@ -375,7 +375,13 @@ export function parseConfig(rawSource: Record<string, string | undefined>): Rela
   const parsed = envSchema.safeParse(source);
   if (!parsed.success) {
     throw new ConfigError(
-      parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`),
+      parsed.error.issues.map((issue) => {
+        const name = issue.path.join('.') || '(root)';
+        const missing = issue.path.length === 1 && source[String(issue.path[0])] === undefined;
+        return missing
+          ? `${name} is not set: add it to this service's environment variables`
+          : `${name}: ${issue.message}`;
+      }),
     );
   }
   const e = parsed.data;

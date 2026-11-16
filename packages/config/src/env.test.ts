@@ -332,6 +332,14 @@ describe('parseConfig', () => {
     expect(parseConfig(local).encryption.keyring[0]!.key.equals(Buffer.alloc(32, 7))).toBe(true);
   });
 
+  it('names variables that are missing altogether in plain words', () => {
+    const { S3_BUCKET: _b, RELAY_SESSION_SECRET: _s, ...rest } = local;
+    expect(problems(rest)).toEqual([
+      "RELAY_SESSION_SECRET is not set: add it to this service's environment variables",
+      "S3_BUCKET is not set: add it to this service's environment variables",
+    ]);
+  });
+
   it('recognises config errors across module instances', () => {
     const foreign = Object.assign(new Error('x'), { name: 'ConfigError', problems: ['p'] });
     expect(isConfigError(foreign)).toBe(true);
