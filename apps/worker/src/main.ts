@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import {
   Logger,
@@ -41,6 +42,40 @@ import { processAssetProbe } from '@relay/services/media-pipeline';
  */
 
 loadDotEnv();
+
+// Plain start and exit lines on stderr, independent of the logger. A start line with no exit
+// line after it means the process was killed from outside (for example by the host's memory
+// limit), which nothing inside the process can report.
+const memoryLimit = (() => {
+  // cgroup v2, then v1.
+  for (const file of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
+    try {
+      const raw = readFileSync(file, 'utf8').trim();
+      const bytes = Number(raw);
+      if (raw === 'max' || bytes > 2 ** 50) return 'none';
+      if (Number.isFinite(bytes)) return `${Math.round(bytes / 1048576)} MB`;
+    } catch {
+      // try the next location
+    }
+  }
+  return 'unknown';
+})();
+console.error(
+  `[relay-worker] starting: node ${process.version}, pid ${process.pid}, memory limit ${memoryLimit}`,
+);
+process.on('exit', (code) =>
+  console.error(
+    `[relay-worker] exiting with code ${code}; peak memory ${Math.round(process.resourceUsage().maxRSS / 1024)} MB`,
+  ),
+);
+process.on('uncaughtException', (error) => {
+  console.error('[relay-worker] uncaught exception:', error);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[relay-worker] unhandled rejection:', reason);
+  process.exit(1);
+});
 
 let config: RelayConfig;
 let ctx: ServiceContext;

@@ -55,6 +55,10 @@ function x264(extra: string[] = []): string[] {
     '30',
     '-threads',
     '1',
+    // No lookahead, one reference frame, no B-frames: halves the encoder's peak memory
+    // (about 210 MB to 105 MB for the 1080x1920 clip) so the demo seed fits a 512 MB worker.
+    '-x264-params',
+    'rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0',
     ...extra,
   ];
 }
