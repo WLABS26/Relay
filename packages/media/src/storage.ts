@@ -57,15 +57,20 @@ export class ObjectTooLargeError extends Error {
 
 export class ObjectStorage {
   readonly bucket: string;
-  private readonly internal: S3Client;
-  private readonly presigner: S3Client;
-  private readonly region: string;
+  private region: string;
+  private readonly config: RelayConfig['storage'];
+  private clients: Promise<{ internal: S3Client; presigner: S3Client }> | undefined;
 
   constructor(config: RelayConfig['storage']) {
     this.bucket = config.bucket;
     this.region = config.region;
+    this.config = config;
+  }
+
+  private build(region: string): { internal: S3Client; presigner: S3Client } {
+    const config = this.config;
     const base = {
-      region: config.region,
+      region,
       forcePathStyle: config.forcePathStyle,
       // Only send checksums when an operation requires them, so browser PUTs to presigned
       // URLs do not need SDK-computed checksum headers.
@@ -80,18 +85,61 @@ export class ObjectStorage {
           }
         : {}),
     };
-    this.internal = new S3Client({
-      ...base,
-      ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+    return {
+      internal: new S3Client({
+        ...base,
+        ...(config.endpoint ? { endpoint: config.endpoint } : {}),
+      }),
+      presigner: new S3Client({
+        ...base,
+        ...(config.publicEndpoint
+          ? { endpoint: config.publicEndpoint }
+          : config.endpoint
+            ? { endpoint: config.endpoint }
+            : {}),
+      }),
+    };
+  }
+
+  /**
+   * On AWS a bucket answers only in its own region, and presigned URLs must be signed for it.
+   * The configured region is easy to get wrong, so ask S3 where the bucket is (any region
+   * names it in the `x-amz-bucket-region` header) and use that. Stores with a custom endpoint
+   * and buckets that cannot be asked (missing, denied) keep the configured region.
+   */
+  private async discoverRegion(): Promise<string> {
+    if (this.config.endpoint) return this.region;
+    const probe = this.build(this.region).internal;
+    try {
+      const out = await probe.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      return out.BucketRegion ?? this.region;
+    } catch (error) {
+      const headers = (error as { $response?: { headers?: Record<string, string> } }).$response
+        ?.headers;
+      return headers?.['x-amz-bucket-region'] ?? this.region;
+    } finally {
+      probe.destroy();
+    }
+  }
+
+  private connect(): Promise<{ internal: S3Client; presigner: S3Client }> {
+    this.clients ??= this.discoverRegion().then((region) => {
+      this.region = region;
+      return this.build(region);
     });
-    this.presigner = new S3Client({
-      ...base,
-      ...(config.publicEndpoint
-        ? { endpoint: config.publicEndpoint }
-        : config.endpoint
-          ? { endpoint: config.endpoint }
-          : {}),
-    });
+    return this.clients;
+  }
+  private async client(): Promise<S3Client> {
+    return (await this.connect()).internal;
+  }
+  private async signer(): Promise<S3Client> {
+    return (await this.connect()).presigner;
+  }
+
+  /** The region in use after discovery (for logs). */
+  async bucketRegion(): Promise<string> {
+    await this.connect();
+    return this.region;
   }
 
   /**
@@ -106,7 +154,7 @@ export class ObjectStorage {
     expiresInSeconds: number;
   }): Promise<{ url: string; headers: Record<string, string> }> {
     const url = await getSignedUrl(
-      this.presigner,
+      await this.signer(),
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -124,7 +172,9 @@ export class ObjectStorage {
   }
 
   async createMultipart(input: { key: string; contentType: string }): Promise<string> {
-    const out = await this.internal.send(
+    const out = await (
+      await this.client()
+    ).send(
       new CreateMultipartUploadCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -144,7 +194,7 @@ export class ObjectStorage {
     expiresInSeconds: number;
   }): Promise<string> {
     return getSignedUrl(
-      this.presigner,
+      await this.signer(),
       new UploadPartCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -160,7 +210,9 @@ export class ObjectStorage {
     const parts: PartInfo[] = [];
     let marker: string | undefined;
     for (;;) {
-      const out = await this.internal.send(
+      const out = await (
+        await this.client()
+      ).send(
         new ListPartsCommand({
           Bucket: this.bucket,
           Key: input.key,
@@ -183,7 +235,9 @@ export class ObjectStorage {
     uploadId: string;
     parts: Array<{ partNumber: number; etag: string }>;
   }): Promise<void> {
-    await this.internal.send(
+    await (
+      await this.client()
+    ).send(
       new CompleteMultipartUploadCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -198,7 +252,9 @@ export class ObjectStorage {
 
   async abortMultipart(input: { key: string; uploadId: string }): Promise<void> {
     try {
-      await this.internal.send(
+      await (
+        await this.client()
+      ).send(
         new AbortMultipartUploadCommand({
           Bucket: this.bucket,
           Key: input.key,
@@ -213,7 +269,9 @@ export class ObjectStorage {
 
   async head(key: string, versionId?: string | null): Promise<HeadResult | null> {
     try {
-      const out = await this.internal.send(
+      const out = await (
+        await this.client()
+      ).send(
         new HeadObjectCommand({
           Bucket: this.bucket,
           Key: key,
@@ -244,7 +302,7 @@ export class ObjectStorage {
     const disposition = input.disposition ?? 'inline';
     const safeName = (input.filename ?? 'media').replace(/[^\w.-]+/g, '_').slice(0, 80);
     const url = await getSignedUrl(
-      this.presigner,
+      await this.signer(),
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -269,7 +327,9 @@ export class ObjectStorage {
     versionId?: string | null;
     ifMatch?: string | null;
   }): Promise<{ bytes: number; sha256: string; head: Buffer }> {
-    const out = await this.internal.send(
+    const out = await (
+      await this.client()
+    ).send(
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -312,7 +372,9 @@ export class ObjectStorage {
     contentType: string;
   }): Promise<{ etag: string | null; versionId: string | null; size: number }> {
     const { size } = await stat(input.path);
-    const out = await this.internal.send(
+    const out = await (
+      await this.client()
+    ).send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -331,7 +393,9 @@ export class ObjectStorage {
     body: Buffer;
     contentType: string;
   }): Promise<{ etag: string | null; versionId: string | null }> {
-    const out = await this.internal.send(
+    const out = await (
+      await this.client()
+    ).send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: input.key,
@@ -349,7 +413,9 @@ export class ObjectStorage {
     let keyMarker: string | undefined;
     let versionMarker: string | undefined;
     for (;;) {
-      const out = await this.internal.send(
+      const out = await (
+        await this.client()
+      ).send(
         new ListObjectVersionsCommand({
           Bucket: this.bucket,
           Prefix: key,
@@ -361,9 +427,9 @@ export class ObjectStorage {
         (v) => v.Key === key,
       );
       for (const v of entries) {
-        await this.internal.send(
-          new DeleteObjectCommand({ Bucket: this.bucket, Key: key, VersionId: v.VersionId }),
-        );
+        await (
+          await this.client()
+        ).send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key, VersionId: v.VersionId }));
         deleted++;
       }
       if (!out.IsTruncated) break;
@@ -371,7 +437,9 @@ export class ObjectStorage {
       versionMarker = out.NextVersionIdMarker;
     }
     if (deleted === 0) {
-      await this.internal
+      await (
+        await this.client()
+      )
         .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }))
         .catch(() => undefined);
     }
@@ -385,10 +453,12 @@ export class ObjectStorage {
    */
   async ensureBucket(corsOrigins: string[]): Promise<void> {
     try {
-      await this.internal.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      await (await this.client()).send(new HeadBucketCommand({ Bucket: this.bucket }));
     } catch (error) {
       if (!isNotFound(error)) throw error;
-      await this.internal.send(
+      await (
+        await this.client()
+      ).send(
         new CreateBucketCommand({
           Bucket: this.bucket,
           // S3 needs the region for every bucket outside us-east-1; S3-compatible stores
@@ -404,13 +474,17 @@ export class ObjectStorage {
         }),
       );
     }
-    await this.internal.send(
+    await (
+      await this.client()
+    ).send(
       new PutBucketVersioningCommand({
         Bucket: this.bucket,
         VersioningConfiguration: { Status: 'Enabled' },
       }),
     );
-    const existing = await this.internal
+    const existing = await (
+      await this.client()
+    )
       .send(new GetBucketCorsCommand({ Bucket: this.bucket }))
       .then((out) => out.CORSRules ?? [])
       .catch((error: unknown) => {
@@ -418,7 +492,9 @@ export class ObjectStorage {
           return [] as CORSRule[];
         throw error;
       });
-    await this.internal.send(
+    await (
+      await this.client()
+    ).send(
       new PutBucketCorsCommand({
         Bucket: this.bucket,
         CORSConfiguration: { CORSRules: mergeCorsRules(existing, relayCorsRule(corsOrigins)) },
@@ -429,8 +505,8 @@ export class ObjectStorage {
   /** Current bucket settings, for verifying a bucket that was provisioned by hand. */
   async describeBucket(): Promise<{ versioning: boolean; corsOrigins: string[] }> {
     const [versioning, cors] = await Promise.all([
-      this.internal.send(new GetBucketVersioningCommand({ Bucket: this.bucket })),
-      this.internal
+      (await this.client()).send(new GetBucketVersioningCommand({ Bucket: this.bucket })),
+      (await this.client())
         .send(new GetBucketCorsCommand({ Bucket: this.bucket }))
         .catch((error: unknown) => {
           if (error instanceof S3ServiceException && error.name === 'NoSuchCORSConfiguration')
@@ -445,7 +521,7 @@ export class ObjectStorage {
   }
 
   async ping(): Promise<void> {
-    await this.internal.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    await (await this.client()).send(new HeadBucketCommand({ Bucket: this.bucket }));
   }
 }
 
