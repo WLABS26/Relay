@@ -85,6 +85,57 @@ export interface Campaigns {
   workspaceId: string;
 }
 
+export interface ClipCandidates {
+  analysisId: string;
+  assetId: string;
+  confidence: Numeric;
+  createdAt: Generated<Timestamp>;
+  endMs: number;
+  evidence: Generated<Json>;
+  feedback: string | null;
+  feedbackAt: Timestamp | null;
+  feedbackBy: string | null;
+  id: string;
+  rank: number;
+  rankerVersion: string;
+  reason: string;
+  score: Numeric;
+  startMs: number;
+  workspaceId: string;
+}
+
+export interface ClipProjects {
+  archivedAt: Timestamp | null;
+  candidateId: string | null;
+  createdAt: Generated<Timestamp>;
+  createdBy: string;
+  currentRevisionId: string | null;
+  id: string;
+  pageId: string;
+  sourceAssetId: string;
+  sourceAssetVersion: number;
+  title: string;
+  updatedAt: Generated<Timestamp>;
+  version: Generated<number>;
+  workspaceId: string;
+}
+
+export interface ClipRevisions {
+  aspect: string;
+  captions: Json | null;
+  captionStyle: Generated<string>;
+  clipId: string;
+  createdAt: Generated<Timestamp>;
+  createdBy: string;
+  cropMode: string;
+  editHash: string;
+  endMs: number;
+  id: string;
+  revisionNumber: number;
+  startMs: number;
+  workspaceId: string;
+}
+
 export interface ExternalPublications {
   confirmedAt: Timestamp;
   connectionMode: string;
@@ -152,6 +203,29 @@ export interface JobRuns {
   progress: Generated<number>;
   startedAt: Timestamp | null;
   status: Generated<string>;
+  updatedAt: Generated<Timestamp>;
+  workspaceId: string;
+}
+
+export interface MediaAnalyses {
+  analyzerVersion: string;
+  assetId: string;
+  assetVersion: number;
+  coverage: Numeric | null;
+  createdAt: Generated<Timestamp>;
+  durationMs: number | null;
+  envelope: Json | null;
+  errorCode: string | null;
+  errorDetail: string | null;
+  finishedAt: Timestamp | null;
+  hasAudio: boolean | null;
+  id: string;
+  inputVariant: Generated<string>;
+  rankerVersion: string;
+  requestedBy: string;
+  startedAt: Timestamp | null;
+  status: string;
+  summary: Json | null;
   updatedAt: Generated<Timestamp>;
   workspaceId: string;
 }
@@ -496,6 +570,30 @@ export interface RelaySchemaInfo {
   value: string;
 }
 
+export interface RenderJobs {
+  clipId: string;
+  createdAt: Generated<Timestamp>;
+  errorCode: string | null;
+  errorDetail: string | null;
+  finishedAt: Timestamp | null;
+  id: string;
+  outputAssetId: string;
+  outputProbe: Json | null;
+  profile: string;
+  rendererVersion: string | null;
+  renderKey: string;
+  renderMs: number | null;
+  requestedBy: string;
+  revisionId: string;
+  sourceAssetId: string;
+  sourceAssetVersion: number;
+  sourceRightsVersion: number;
+  startedAt: Timestamp | null;
+  status: string;
+  updatedAt: Generated<Timestamp>;
+  workspaceId: string;
+}
+
 export interface Sessions {
   authMethod: string;
   createdAt: Generated<Timestamp>;
@@ -671,10 +769,14 @@ export interface DB {
   auditEvents: AuditEvents;
   authLoginAttempts: AuthLoginAttempts;
   campaigns: Campaigns;
+  clipCandidates: ClipCandidates;
+  clipProjects: ClipProjects;
+  clipRevisions: ClipRevisions;
   externalPublications: ExternalPublications;
   idempotencyKeys: IdempotencyKeys;
   invitations: Invitations;
   jobRuns: JobRuns;
+  mediaAnalyses: MediaAnalyses;
   mediaAssets: MediaAssets;
   mediaVariants: MediaVariants;
   membershipPages: MembershipPages;
@@ -697,6 +799,7 @@ export interface DB {
   publishIntents: PublishIntents;
   relayDemoSeed: RelayDemoSeed;
   relaySchemaInfo: RelaySchemaInfo;
+  renderJobs: RenderJobs;
   sessions: Sessions;
   slotReservations: SlotReservations;
   socialAccounts: SocialAccounts;

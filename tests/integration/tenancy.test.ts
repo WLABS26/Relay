@@ -74,6 +74,11 @@ describe('tenant isolation (M0 gate)', () => {
       'audit_events',
       'workspace_memberships',
       'workspaces',
+      'media_analyses',
+      'clip_candidates',
+      'clip_projects',
+      'clip_revisions',
+      'render_jobs',
     ]) {
       const r = await sql<{
         n: number;
@@ -210,6 +215,32 @@ describe('tenant isolation (M0 gate)', () => {
       await app.end();
       await worker.end();
     }
+  });
+
+  it('splits clipping writes by role: the app edits, the worker records results', async () => {
+    const inTenant = (db: typeof c.app.db, statement: ReturnType<typeof sql>) =>
+      withTenant(db, { workspaceId: a.workspaceId }, (tx) => statement.execute(tx));
+    // The worker never creates clip projects, revisions or render jobs.
+    for (const table of ['clip_projects', 'clip_revisions', 'render_jobs', 'media_analyses']) {
+      await expect(
+        inTenant(c.worker.db, sql`INSERT INTO ${sql.table(table)} DEFAULT VALUES`),
+        table,
+      ).rejects.toThrow(/permission denied/);
+    }
+    // The app never writes candidates or results.
+    await expect(
+      inTenant(c.app.db, sql`INSERT INTO clip_candidates DEFAULT VALUES`),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      inTenant(c.app.db, sql`UPDATE render_jobs SET status = 'succeeded'`),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      inTenant(c.app.db, sql`UPDATE media_analyses SET status = 'succeeded'`),
+    ).rejects.toThrow(/permission denied/);
+    // Revisions are immutable for everyone, including the role that inserts them.
+    await expect(inTenant(c.app.db, sql`UPDATE clip_revisions SET start_ms = 0`)).rejects.toThrow(
+      /permission denied/,
+    );
   });
 
   it('allows worker maintenance scans to read but never write across tenants', async () => {
