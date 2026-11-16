@@ -14,6 +14,17 @@ import {
 const allowed = (role: Role) => ACTIONS.filter((a) => can(role, a));
 
 describe('role matrix', () => {
+  it('covers clipping with existing page-scoped actions: editors clip and export, viewers only look', () => {
+    // The clipping tool adds no Action of its own; these four are what its commands check.
+    const clipping: Action[] = ['media.view', 'content.create', 'content.edit', 'content.export'];
+    for (const a of clipping) {
+      expect(isPageScoped(a), `${a} is page-scoped`).toBe(true);
+      expect(can('editor', a), `editor should ${a}`).toBe(true);
+    }
+    expect(can('viewer', 'media.view')).toBe(true);
+    for (const a of clipping.slice(1)) expect(can('viewer', a), `viewer must not ${a}`).toBe(false);
+  });
+
   it('is strictly nested: each role can do everything the role below it can', () => {
     const order: Role[] = ['viewer', 'editor', 'publisher', 'admin', 'owner'];
     for (let i = 1; i < order.length; i++) {

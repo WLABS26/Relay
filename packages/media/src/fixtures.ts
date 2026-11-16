@@ -43,6 +43,55 @@ const BITEXACT = [
 ];
 const TAG = ['-metadata', 'comment=Relay synthetic fixture'];
 
+/**
+ * Bumped whenever the set of files or their content changes, so a cached fixture directory
+ * written by an older generator is regenerated instead of silently missing files.
+ */
+export const FIXTURE_GENERATOR = 'relay-fixtures@2';
+
+/**
+ * How `timecode-30fps.mp4` and `timecode-offset.mp4` encode the frame number. Every frame is
+ * two flat grey halves: the left half carries `frame % modulus`, the right half
+ * `floor(frame / modulus)`, each as `base + step * digit` on the luma plane. Flat greys survive
+ * lossy encoding, scaling and centre crops within a level or two, so a test can read both
+ * halves with `signalstats` (YAVG) and recover the exact source frame without OCR or a font.
+ */
+export const TIMECODE_FIXTURE = {
+  fps: 30,
+  frames: 360,
+  width: 1280,
+  height: 720,
+  base: 32,
+  step: 8,
+  modulus: 20,
+  /** Container start time of `timecode-offset.mp4`. */
+  offsetMs: 5000,
+} as const;
+
+/** Source frame number from the mean luma of the left and right halves of a timecode frame. */
+export function timecodeFrameFromLuma(leftLuma: number, rightLuma: number): number {
+  const digit = (luma: number) =>
+    Math.round((luma - TIMECODE_FIXTURE.base) / TIMECODE_FIXTURE.step);
+  return digit(rightLuma) * TIMECODE_FIXTURE.modulus + digit(leftLuma);
+}
+
+/**
+ * Authored timeline of `highlight.mp4`, in milliseconds. The analysis tests compare what
+ * FFmpeg detects against these numbers, so they are the single definition of the fixture.
+ */
+export const HIGHLIGHT_FIXTURE = {
+  durationMs: 90_000,
+  /** Digital silence. Longer than the 400 ms detector minimum so AAC ringing cannot hide it. */
+  silences: [
+    { startMs: 37_400, endMs: 38_000 },
+    { startMs: 46_000, endMs: 46_600 },
+  ],
+  /** The loud burst; everything else that is not silent is a quiet tone. */
+  burst: { startMs: 40_000, endMs: 46_000 },
+  /** Hard cuts between flat colours. */
+  sceneChangesMs: [40_000, 43_000],
+} as const;
+
 function x264(extra: string[] = []): string[] {
   return [
     '-c:v',
@@ -98,6 +147,27 @@ export const FIXTURES: FixtureSpec[] = [
     kind: 'video',
     description: 'Odd dimensions (yuv444p), 3 s',
     expect: { valid: true, width: 721, height: 1279, durationMs: 3000, hasAudio: false },
+  },
+  {
+    name: 'timecode-30fps.mp4',
+    mime: 'video/mp4',
+    kind: 'video',
+    description: 'Frame number encoded as grey levels, 12 s, 30 fps, tone stepping every second',
+    expect: { valid: true, width: 1280, height: 720, durationMs: 12000, hasAudio: true },
+  },
+  {
+    name: 'timecode-offset.mp4',
+    mime: 'video/mp4',
+    kind: 'video',
+    description: 'The timecode clip with a container start time of 5 s',
+    expect: { valid: true, width: 1280, height: 720, durationMs: 12000, hasAudio: true },
+  },
+  {
+    name: 'highlight.mp4',
+    mime: 'video/mp4',
+    kind: 'video',
+    description: 'Quiet tone with two silences, a loud burst at 40-46 s and two hard cuts, 90 s',
+    expect: { valid: true, width: 320, height: 180, durationMs: 90000, hasAudio: true },
   },
   {
     name: 'portrait-1080x1350.jpg',
@@ -246,6 +316,73 @@ export async function generateFixtures(options: {
     out('odd-721x1279-3s.mp4'),
   ]);
 
+  // Timecode: a 32x18 source keeps the per-pixel expression cheap; nearest-neighbour scaling
+  // by exactly 40 puts the boundary between the two halves on column 640.
+  const tc = TIMECODE_FIXTURE;
+  const tcSeconds = tc.frames / tc.fps;
+  const tcLuma = `if(lt(X,W/2),${tc.base}+${tc.step}*mod(N,${tc.modulus}),${tc.base}+${tc.step}*floor(N/${tc.modulus}))`;
+  await run([
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=gray:size=32x18:rate=${tc.fps}:duration=${tcSeconds},format=yuv420p,geq=lum='${tcLuma}':cb=128:cr=128,scale=${tc.width}:${tc.height}:flags=neighbor`,
+    '-f',
+    'lavfi',
+    '-i',
+    `aevalsrc='0.25*sin(2*PI*(220+110*floor(t))*t)':sample_rate=48000:duration=${tcSeconds}`,
+    ...x264(['-pix_fmt', 'yuv420p']),
+    ...aac,
+    '-shortest',
+    '-movflags',
+    '+faststart',
+    ...BITEXACT,
+    ...TAG,
+    out('timecode-30fps.mp4'),
+  ]);
+  // Same packets, shifted: the muxer records the offset as a nonzero container start time.
+  await run([
+    '-i',
+    out('timecode-30fps.mp4'),
+    '-c',
+    'copy',
+    '-output_ts_offset',
+    String(tc.offsetMs / 1000),
+    '-movflags',
+    '+faststart',
+    ...BITEXACT,
+    ...TAG,
+    out('timecode-offset.mp4'),
+  ]);
+
+  // Highlight: three flat colours give exactly two scene cuts; the audio envelope is one
+  // expression so the silences and the burst sit on exact sample positions.
+  const hl = HIGHLIGHT_FIXTURE;
+  const sec = (ms: number) => String(ms / 1000);
+  const [cutA, cutB] = hl.sceneChangesMs;
+  const flat = (colour: string, ms: number) =>
+    `color=c=${colour}:size=320x180:rate=30:duration=${sec(ms)}`;
+  const within = (r: { startMs: number; endMs: number }) =>
+    `gte(t,${sec(r.startMs)})*lt(t,${sec(r.endMs)})`;
+  const envelope = `if(${hl.silences.map(within).join('+')},0,if(${within(hl.burst)},0.5,0.05))`;
+  await run([
+    '-f',
+    'lavfi',
+    '-i',
+    `${flat('0x203040', cutA)}[a];${flat('0xd0a030', cutB - cutA)}[b];${flat('0x30b060', hl.durationMs - cutB)}[c];[a][b][c]concat=n=3:v=1:a=0`,
+    '-f',
+    'lavfi',
+    '-i',
+    `aevalsrc='${envelope}*sin(2*PI*440*t)':sample_rate=48000:duration=${sec(hl.durationMs)}`,
+    ...x264(['-pix_fmt', 'yuv420p']),
+    ...aac,
+    '-shortest',
+    '-movflags',
+    '+faststart',
+    ...BITEXACT,
+    ...TAG,
+    out('highlight.mp4'),
+  ]);
+
   const still = (w: number, h: number) => [
     '-f',
     'lavfi',
@@ -305,7 +442,7 @@ export async function generateFixtures(options: {
       sha256: createHash('sha256').update(data).digest('hex'),
     });
   }
-  const manifest: FixtureManifest = { generator: 'relay-fixtures@1', files };
+  const manifest: FixtureManifest = { generator: FIXTURE_GENERATOR, files };
   await writeFile(out('manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }

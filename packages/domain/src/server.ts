@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { canonicalJson, type PublishIntentPayload } from './publishing/intent';
+import type { ClipEdit, RenderKeyInput } from './clip';
+import { canonicalJson, normalizeText, type PublishIntentPayload } from './publishing/intent';
 
 /**
  * Server-only helpers (node:crypto). Import from "@relay/domain/server", never from client
@@ -22,6 +23,51 @@ export function intentHash(payload: PublishIntentPayload): string {
 /** Fingerprint of an arbitrary request payload (idempotency, provider request records). */
 export function fingerprint(value: unknown): string {
   return sha256Hex(canonicalJson(value));
+}
+
+/**
+ * Hash of the render-relevant part of a clip revision. Fields are picked explicitly so extra
+ * properties on the argument (IDs, timestamps, the title) can never change the hash, and an
+ * empty caption list hashes like "no captions" because both render the same picture.
+ */
+export function clipEditHash(edit: ClipEdit): string {
+  const captions =
+    edit.captions && edit.captions.length > 0
+      ? edit.captions.map((cue) => ({
+          startMs: cue.startMs,
+          endMs: cue.endMs,
+          text: normalizeText(cue.text),
+        }))
+      : null;
+  return sha256Hex(
+    canonicalJson({
+      v: 1,
+      startMs: edit.startMs,
+      endMs: edit.endMs,
+      aspect: edit.aspect,
+      cropMode: edit.cropMode,
+      captions,
+      captionStyle: edit.captionStyle,
+    }),
+  );
+}
+
+/**
+ * Identity of one derivative: the same edit of the same source bytes by the same renderer and
+ * profile. `render_jobs` keeps at most one active or successful job per key.
+ */
+export function renderKey(input: RenderKeyInput): string {
+  return sha256Hex(
+    canonicalJson({
+      v: 1,
+      editHash: input.editHash,
+      profile: input.profile,
+      sourceAssetId: input.sourceAssetId,
+      sourceAssetVersion: input.sourceAssetVersion,
+      sourceSha256: input.sourceSha256,
+      rendererVersion: input.rendererVersion,
+    }),
+  );
 }
 
 export function hmacSha256(secret: string | Buffer, data: string): Buffer {

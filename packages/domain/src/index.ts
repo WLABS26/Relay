@@ -14,3 +14,6 @@ export * from './scheduling/recommend';
 export * from './publishing/states';
 export * from './publishing/rollup';
 export * from './publishing/intent';
+export * from './clip';
+export * from './captions';
+export * from './ranker';

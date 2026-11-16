@@ -1,4 +1,7 @@
+import { open } from 'node:fs/promises';
+import path from 'node:path';
 import type { ProbeStream, ProbeSummary } from '@relay/domain';
+import { buildFeatures, RMS_HOP_MS, type MediaFeatures } from './analysis';
 import { runTool, runToolOrThrow, ToolError, type RunLimits } from './process';
 
 /**
@@ -15,6 +18,11 @@ export interface MediaToolConfig {
   memoryLimitMb: number;
   threads: number;
   usePrlimit: boolean;
+  /**
+   * CPU-time cap for long decodes (prlimit --cpu). Defaults to the wall-clock timeout times the
+   * thread count, which only ever fires on a process that is spinning rather than waiting.
+   */
+  cpuSeconds?: number;
 }
 
 /** Demuxers permitted for uploads. */
@@ -320,4 +328,124 @@ export async function renderProxy(
     args,
     limits(config, { maxFileBytes: input.maxOutputBytes + 1024 * 1024 }),
   );
+}
+
+/** Side files written by the extraction graph, relative to the scratch directory. */
+const FEATURE_FILES = {
+  scene: 'scene.txt',
+  rms: 'rms.txt',
+  silenceStart: 'silence-start.txt',
+  silenceEnd: 'silence-end.txt',
+} as const;
+
+/** One printed frame is a header plus one value line: about 90 bytes, sized with headroom. */
+const FEATURE_BYTES_PER_HOP = 160;
+const FEATURE_FILE_FLOOR_BYTES = 1024 * 1024;
+
+const FEATURE_VIDEO_CHAIN = [
+  // Dropping to 5 fps before scaling means only one frame in six is ever scaled.
+  'fps=5',
+  'scale=320:-2',
+  'scdet=threshold=10',
+  `metadata=mode=print:key=lavfi.scd.time:file=${FEATURE_FILES.scene}`,
+].join(',');
+
+const FEATURE_AUDIO_CHAIN = [
+  'aresample=8000',
+  // 800 samples at 8 kHz: one astats measurement per 100 ms hop (RMS_HOP_MS).
+  'asetnsamples=n=800:p=0',
+  'astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=RMS_level',
+  `ametadata=mode=print:key=lavfi.astats.Overall.RMS_level:file=${FEATURE_FILES.rms}`,
+  'silencedetect=noise=-35dB:d=0.4',
+  // A keyed print writes one key, and two prints cannot share a file, so starts and ends go
+  // to separate files and are joined after the run.
+  `ametadata=mode=print:key=lavfi.silence_start:file=${FEATURE_FILES.silenceStart}`,
+  `ametadata=mode=print:key=lavfi.silence_end:file=${FEATURE_FILES.silenceEnd}`,
+].join(',');
+
+/** Read at most `maxBytes` of a side file; a missing file reads as empty. */
+async function readSideFile(filePath: string, maxBytes: number): Promise<string> {
+  let handle;
+  try {
+    handle = await open(filePath, 'r');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+    throw error;
+  }
+  try {
+    // Sized from the file, not the limit: the limit is tens of megabytes for long sources.
+    const size = Math.min((await handle.stat()).size, maxBytes);
+    const buffer = Buffer.alloc(size);
+    let length = 0;
+    while (length < size) {
+      const { bytesRead } = await handle.read(buffer, length, size - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    return buffer.subarray(0, length).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Audio level, silences and scene changes of a video, in one decode pass.
+ *
+ * The process writes nothing to stdout (`-f null -`) and prints per-frame metadata to fixed,
+ * relative file names inside `scratchDir`, which is its working directory. Every filter
+ * argument is a constant, so nothing derived from the upload reaches the filter graph.
+ * Timestamps are on the 0-based media timeline: FFmpeg subtracts the container start time
+ * before filtering.
+ */
+export async function extractFeatures(
+  config: MediaToolConfig,
+  input: {
+    inputPath: string;
+    demuxer: string;
+    scratchDir: string;
+    hasAudio: boolean;
+    durationMs: number;
+  },
+): Promise<MediaFeatures> {
+  const hops = Math.ceil(Math.max(input.durationMs, 0) / RMS_HOP_MS);
+  const maxFileBytes = Math.max(FEATURE_FILE_FLOOR_BYTES, hops * FEATURE_BYTES_PER_HOP);
+  const args = [
+    ...COMMON_INPUT(input.demuxer, path.resolve(input.inputPath)),
+    '-map',
+    '0:v:0',
+    '-vf',
+    FEATURE_VIDEO_CHAIN,
+    ...(input.hasAudio ? ['-map', '0:a:0', '-af', FEATURE_AUDIO_CHAIN] : []),
+    '-threads',
+    String(config.threads),
+    '-f',
+    'null',
+    '-',
+  ];
+  await runToolOrThrow(
+    config.ffmpegPath,
+    args,
+    limits(config, {
+      maxFileBytes,
+      cpuSeconds: config.cpuSeconds ?? config.timeoutSeconds * Math.max(1, config.threads),
+    }),
+    { cwd: input.scratchDir },
+  );
+  const read = (name: string) => readSideFile(path.join(input.scratchDir, name), maxFileBytes);
+  const scene = await read(FEATURE_FILES.scene);
+  if (!input.hasAudio) {
+    return buildFeatures({ durationMs: input.durationMs, rms: null, silence: null, scene });
+  }
+  const [rms, starts, ends] = await Promise.all([
+    read(FEATURE_FILES.rms),
+    read(FEATURE_FILES.silenceStart),
+    read(FEATURE_FILES.silenceEnd),
+  ]);
+  // Each file ends with a newline when FFmpeg exits cleanly, so the join keeps lines whole.
+  return buildFeatures({
+    durationMs: input.durationMs,
+    rms,
+    silence: `${starts}${ends}`,
+    scene,
+  });
 }

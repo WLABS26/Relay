@@ -1,10 +1,21 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseConfig } from '@relay/config';
 import { loadDotEnv, REPO_ROOT } from '@relay/config/dotenv';
 import { recreateDatabase, withDatabase } from '@relay/db/admin';
-import { ObjectStorage } from '@relay/media';
-import { generateFixtures } from '@relay/media/fixtures';
+import { ObjectStorage, probeFile } from '@relay/media';
+import { FIXTURE_GENERATOR, generateFixtures } from '@relay/media/fixtures';
+
+/** True when the cached fixture set was written by the current generator. */
+function fixturesCurrent(manifestPath: string): boolean {
+  if (!existsSync(manifestPath)) return false;
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { generator?: unknown };
+    return manifest.generator === FIXTURE_GENERATOR;
+  } catch {
+    return false;
+  }
+}
 
 /** Recreate the test database from migrations, provision the test bucket, ensure fixtures exist. */
 export default async function setup(): Promise<void> {
@@ -33,5 +44,25 @@ export default async function setup(): Promise<void> {
     'http://localhost:3100',
   ]);
   const manifest = path.join(REPO_ROOT, 'fixtures/media/manifest.json');
-  if (!existsSync(manifest)) await generateFixtures({ outDir: path.dirname(manifest) });
+  // A set cached by an older generator lacks the newer files, so it is regenerated.
+  if (!fixturesCurrent(manifest)) {
+    await generateFixtures({ outDir: path.dirname(manifest), ffmpegPath: config.media.ffmpegPath });
+  }
+  // The trim tests rely on this file having a nonzero container start time; a muxer that
+  // normalised the offset away would make them pass without testing anything.
+  const offset = await probeFile(
+    {
+      ffmpegPath: config.media.ffmpegPath,
+      ffprobePath: config.media.ffprobePath,
+      timeoutSeconds: config.media.timeoutSeconds,
+      memoryLimitMb: config.media.memoryLimitMb,
+      threads: config.media.threads,
+      usePrlimit: config.media.usePrlimit,
+    },
+    path.join(path.dirname(manifest), 'timecode-offset.mp4'),
+    'mov',
+  );
+  if (!offset.startTimeMs || offset.startTimeMs <= 0) {
+    throw new Error('Fixture timecode-offset.mp4 has no container start offset.');
+  }
 }

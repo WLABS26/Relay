@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CANDIDATE_FEEDBACK, CLIP_ASPECTS, CLIP_CROP_MODES } from './clip';
 import { CONTENT_FORMATS, DESTINATION_PROVIDERS, PAGE_GOALS, VISIBILITIES } from './providers';
 import { ROLES } from './roles';
 import { publishingRulesSchema } from './scheduling/rules';
@@ -143,6 +144,98 @@ export const completeUploadSchema = z.strictObject({
     )
     .max(10_000)
     .optional(),
+});
+
+// ----- Clipping -----------------------------------------------------------------------
+
+/** Milliseconds on the source timeline; one day is far beyond any accepted source. */
+const timelineMs = z.number().int().min(0).max(86_400_000);
+const clipTitle = shortText(120);
+
+/**
+ * Shape only. Ordering, overlap, line limits and forbidden code points are checked by
+ * `validateCues` against the clip range, which reports errors per cue; the text bound here is
+ * deliberately looser than that rule so an over-long line gets the specific message.
+ */
+export const clipCaptionCueSchema = z.strictObject({
+  startMs: timelineMs,
+  endMs: timelineMs,
+  text: z.string().min(1).max(200),
+});
+
+export const startAnalysisSchema = z.strictObject({
+  assetId: uuid,
+});
+
+export const createClipSchema = z
+  .strictObject({
+    sourceAssetId: uuid,
+    /** Start from a suggested candidate, or give an explicit range; never both. */
+    candidateId: uuid.optional(),
+    startMs: timelineMs.optional(),
+    endMs: timelineMs.optional(),
+    title: clipTitle.optional(),
+  })
+  .superRefine((v, ctx) => {
+    const hasStart = v.startMs !== undefined;
+    const hasEnd = v.endMs !== undefined;
+    if (v.candidateId !== undefined) {
+      if (hasStart || hasEnd) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Give either a candidate or a range, not both',
+          path: ['candidateId'],
+        });
+      }
+      return;
+    }
+    if (!hasStart) {
+      ctx.addIssue({ code: 'custom', message: 'Choose a start time', path: ['startMs'] });
+    }
+    if (!hasEnd) {
+      ctx.addIssue({ code: 'custom', message: 'Choose an end time', path: ['endMs'] });
+    }
+    if (hasStart && hasEnd && v.endMs! <= v.startMs!) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'The end must be after the start',
+        path: ['endMs'],
+      });
+    }
+  });
+
+/** A full replacement of the editable state: every save becomes one immutable revision. */
+export const updateClipSchema = z
+  .strictObject({
+    /** The project version the editor loaded (optimistic check). */
+    version: z.number().int().min(1),
+    startMs: timelineMs,
+    endMs: timelineMs,
+    aspect: z.enum(CLIP_ASPECTS),
+    cropMode: z.enum(CLIP_CROP_MODES),
+    captions: z.array(clipCaptionCueSchema).max(500).nullable(),
+    title: clipTitle.optional(),
+  })
+  .refine((v) => v.endMs > v.startMs, {
+    message: 'The end must be after the start',
+    path: ['endMs'],
+  });
+
+export const importCaptionsSchema = z.strictObject({
+  format: z.enum(['srt', 'vtt']),
+  /** 200 KiB of UTF-8 is at most this many UTF-16 units; the parser enforces the byte cap. */
+  text: z.string().min(1).max(204_800),
+  /** Whether the file's times count from the clip start (the usual case) or the source start. */
+  relativeTo: z.enum(['clip', 'source']).default('clip'),
+});
+
+export const requestRenderSchema = z.strictObject({
+  /** Defaults to the clip's current revision. */
+  revisionId: uuid.optional(),
+});
+
+export const candidateFeedbackSchema = z.strictObject({
+  feedback: z.enum(CANDIDATE_FEEDBACK),
 });
 
 // ----- Posts --------------------------------------------------------------------------
@@ -297,3 +390,9 @@ export type UpdatePostInput = z.infer<typeof updatePostSchema>;
 export type ScheduleInput = z.infer<typeof scheduleSchema>;
 export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
 export type CreateUploadInput = z.infer<typeof createUploadSchema>;
+export type StartAnalysisInput = z.infer<typeof startAnalysisSchema>;
+export type CreateClipInput = z.infer<typeof createClipSchema>;
+export type UpdateClipInput = z.infer<typeof updateClipSchema>;
+export type ImportCaptionsInput = z.infer<typeof importCaptionsSchema>;
+export type RequestRenderInput = z.infer<typeof requestRenderSchema>;
+export type CandidateFeedbackInput = z.infer<typeof candidateFeedbackSchema>;
