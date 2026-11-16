@@ -13,8 +13,17 @@ export async function GET() {
   // explain a slow deployment (a database in another region costs that latency on every query).
   const timings: Record<string, number> = {};
   let ok = true;
+  // The cloud region named in the database host (never the host itself), to compare with the
+  // function region above.
+  let databaseRegion: string | null = null;
   try {
     const ctx = webContext();
+    try {
+      const host = new URL(ctx.config.database.appUrl).hostname;
+      databaseRegion = /\b([a-z]{2}-[a-z]+-\d)\b/.exec(host)?.[1] ?? null;
+    } catch {
+      databaseRegion = null;
+    }
     let started = performance.now();
     const { schemaVersion } = await checkDatabase(ctx.db);
     timings.databaseFirstMs = Math.round(performance.now() - started);
@@ -43,7 +52,7 @@ export async function GET() {
     ok = false;
   }
   return NextResponse.json(
-    { ok, checks, timings, functionRegion: process.env.VERCEL_REGION ?? null },
+    { ok, checks, timings, functionRegion: process.env.VERCEL_REGION ?? null, databaseRegion },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },
   );
 }
