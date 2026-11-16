@@ -90,8 +90,15 @@ class RoleAssumingPool extends pg.Pool {
     super(config);
   }
 
+  /** Physical connections whose role has been proven. */
+  private readonly verified = new WeakSet<object>();
+
   private async connectAsRole(): Promise<pg.PoolClient> {
     const client = await super.connect();
+    // The role is part of the server session (startup options), so it is proven once per
+    // physical connection, not on every checkout: a check per query would double the round
+    // trips of every request.
+    if (this.verified.has(client)) return client;
     try {
       // The role was requested at session start; prove it took effect on this very session.
       const { rows } = await client.query<{ me: string }>('SELECT current_user::text AS me');
@@ -105,6 +112,7 @@ class RoleAssumingPool extends pg.Pool {
       client.release(error as Error);
       throw error;
     }
+    this.verified.add(client);
     return client;
   }
 
