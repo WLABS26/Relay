@@ -67,10 +67,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
-      - name: Install FFmpeg (Ubuntu 24.04 ships 6.1, the version the media suite is verified against)
+      - name: Install FFmpeg (Ubuntu 24.04 ships 6.1, the version the media suite is verified against) and the caption font
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg fonts-inter
           ffmpeg -version | head -1
       - run: pnpm install --frozen-lockfile
       - name: Local configuration (development placeholders only)

@@ -20,7 +20,7 @@ RUN if [ -f /tmp/devcontainer-context/extra-ca.crt ]; then \
 
 RUN apt-get -o Acquire::Retries=5 update \
  && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-      ffmpeg postgresql-client \
+      ffmpeg fonts-inter postgresql-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Node 22 (binary, npm and corepack) and pnpm 10.28.0, available to every user.
