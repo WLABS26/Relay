@@ -20,6 +20,7 @@ export * from './assets';
 export * from './analysis';
 export * from './clips';
 export * from './clip-render';
+export * from './clip-sources';
 export * from './destinations';
 export * from './intents';
 export * from './posts';

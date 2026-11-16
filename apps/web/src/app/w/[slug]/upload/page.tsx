@@ -11,12 +11,13 @@ export default async function UploadPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; intent?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
   const wc = await loadWorkspace(slug);
   const page = selectedPage(wc, sp.page) ?? wc.pages[0] ?? null;
+  const forClips = sp.intent === 'clips';
   const uploadable = wc.pages.filter(
     (p) => ['owner', 'admin', 'publisher', 'editor'].includes(wc.member.role) && p,
   );
@@ -24,10 +25,11 @@ export default async function UploadPage({
     <>
       <div className="app-page-header">
         <div>
-          <h1>Upload content</h1>
+          <h1>{forClips ? 'Upload a video to clip' : 'Upload content'}</h1>
           <p>
-            Upload a finished video, an image, or several images for a carousel. Files go straight
-            to private storage and are validated before use.
+            {forClips
+              ? 'Upload a recording you are allowed to use. It goes straight to private storage, is validated, and is then analysed for moments worth clipping.'
+              : 'Upload a finished video, an image, or several images for a carousel. Files go straight to private storage and are validated before use.'}
           </p>
         </div>
       </div>
@@ -37,6 +39,7 @@ export default async function UploadPage({
         </Banner>
       ) : (
         <UploadFlow
+          intent={forClips ? 'clips' : 'post'}
           slug={slug}
           workspaceId={wc.workspace.id}
           statement={FIRST_PARTY_STATEMENT}

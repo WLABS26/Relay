@@ -1,43 +1,79 @@
 import type { Metadata } from 'next';
-import { Scissors } from 'lucide-react';
-import { Banner, Card } from '@relay/ui';
+import Link from 'next/link';
+import { Scissors, Upload } from 'lucide-react';
+import { can } from '@relay/domain';
+import { listClipSources } from '@relay/services';
+import { EmptyState, linkButtonClass } from '@relay/ui';
+import { SourceList } from '@/components/clips/SourceList';
+import { toWire } from '@/components/clips/types';
+import { loadWorkspace, selectedPage } from '@/lib/server/workspace';
 
 export const metadata: Metadata = { title: 'Find clips' };
 
-export default function FindClipsPage() {
+export default async function FindClipsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const { slug } = await params;
+  const sp = await searchParams;
+  const wc = await loadWorkspace(slug);
+  const page = selectedPage(wc, sp.page);
+  const { sources } = await listClipSources(wc.ctx, wc.user, wc.workspace.id, {
+    ...(page ? { pageId: page.id } : {}),
+  });
+  const canUpload = can(wc.member.role, 'media.upload');
+  const uploadHref = `/w/${slug}/upload?intent=clips${page ? `&page=${page.id}` : ''}`;
   return (
     <>
       <div className="app-page-header">
         <div>
           <h1>Find clips</h1>
-          <p>Turn an authorised stream, replay or video into timestamped clip candidates.</p>
+          <p>
+            Relay analyses a video you uploaded, suggests the moments worth clipping and says why.
+            You trim, frame and caption the clip, then hand it over as a draft post.
+          </p>
         </div>
+        {canUpload ? (
+          <Link className={linkButtonClass('primary')} href={uploadHref}>
+            <Upload aria-hidden /> Upload a video
+          </Link>
+        ) : null}
       </div>
-      <Banner tone="info" title="Not available in this build (planned for milestone M2)">
-        Source resolution, rights checks, time alignment, the deterministic highlight ranker and the
-        clip editor ship in M2. Nothing on this page sends requests.
-      </Banner>
-      <Card className="r-stack">
-        <div className="r-row-tight">
-          <Scissors aria-hidden width={20} height={20} />
-          <h2>What M2 will add</h2>
-        </div>
-        <ul className="r-small r-stack-sm" style={{ margin: 0, paddingLeft: 20 }}>
-          <li>
-            Paste a supported YouTube or Twitch URL; Relay resolves metadata, signals and media
-            access separately.
-          </li>
-          <li>
-            A pasted URL never implies downloadable media or permission to repost: attach the
-            creator’s authorised recording.
-          </li>
-          <li>
-            Review explainable, timestamped candidates; set in/out points, reframe, edit captions
-            and render.
-          </li>
-          <li>Hand a draft to a marketer without access to their social accounts.</li>
-        </ul>
-      </Card>
+      {sources.length === 0 ? (
+        <EmptyState
+          icon={<Scissors aria-hidden />}
+          title={page ? `No videos on ${page.name} yet` : 'No videos yet'}
+          action={
+            canUpload ? (
+              <Link className={linkButtonClass('secondary')} href={uploadHref}>
+                Upload a video
+              </Link>
+            ) : undefined
+          }
+        >
+          {canUpload
+            ? 'Upload a recording you are allowed to use. Once it is validated, it appears here ready to analyse.'
+            : 'Videos uploaded by an editor appear here once they are validated.'}
+        </EmptyState>
+      ) : (
+        <>
+          <p className="r-small r-muted">
+            {page ? page.name : 'All pages'} · {sources.length} video
+            {sources.length === 1 ? '' : 's'} ready to clip
+          </p>
+          <SourceList
+            slug={slug}
+            workspaceId={wc.workspace.id}
+            sources={toWire(sources)}
+            pageNames={Object.fromEntries(wc.pages.map((p) => [p.id, p.name]))}
+            showPage={!page}
+            canAnalyse={can(wc.member.role, 'content.create')}
+          />
+        </>
+      )}
     </>
   );
 }

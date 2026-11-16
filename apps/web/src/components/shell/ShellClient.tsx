@@ -29,7 +29,8 @@ const NAV = [
 ];
 const ACTIONS = [
   { href: 'upload', label: 'Upload content', icon: <Upload aria-hidden /> },
-  { href: 'find-clips', label: 'Find clips', icon: <Scissors aria-hidden /> },
+  // The clip editor lives under /clips but belongs to this section.
+  { href: 'find-clips', label: 'Find clips', icon: <Scissors aria-hidden />, also: 'clips' },
 ];
 const SETTINGS = [
   { href: 'settings/pages', label: 'Pages & rules', icon: <Settings aria-hidden /> },
@@ -43,9 +44,12 @@ export function SidebarNav({ slug }: { slug: string }) {
   const search = useSearchParams();
   const page = search.get('page');
   const suffix = page ? `?page=${encodeURIComponent(page)}` : '';
-  const link = (item: { href: string; label: string; icon: ReactNode }) => {
+  const link = (item: { href: string; label: string; icon: ReactNode; also?: string }) => {
     const href = `/w/${slug}/${item.href}`;
-    const active = pathname === href || pathname.startsWith(`${href}/`);
+    const active =
+      pathname === href ||
+      pathname.startsWith(`${href}/`) ||
+      (item.also !== undefined && pathname.startsWith(`/w/${slug}/${item.also}/`));
     return (
       <Link
         key={item.href}

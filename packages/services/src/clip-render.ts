@@ -253,7 +253,9 @@ export async function requestClipRender(
             body: {
               renderJobId: existing.id,
               clipId: clip.id,
-              revisionId: existing.revisionId,
+              // The clip's own revision: a shared render may be recorded under another
+              // revision or another clip with the identical edit.
+              revisionId: revision.id,
               outputAssetId: existing.outputAssetId,
               jobId: job?.id ?? null,
               status: existing.status as RequestClipRenderResponse['status'],
@@ -357,32 +359,76 @@ export async function requestClipRender(
   });
 }
 
+const RENDER_COLUMNS = [
+  'r.id',
+  'r.revisionId',
+  'r.status',
+  'r.errorCode',
+  'r.errorDetail',
+  'r.outputAssetId',
+  'r.createdAt',
+  'r.finishedAt',
+  'a.status as assetStatus',
+  'a.objectKey',
+  'a.objectVersionId',
+  'a.originalFilename',
+  'a.declaredMime',
+  'a.sizeBytes',
+] as const;
+
 /**
- * The newest render of a clip and its output asset, for commands that need a finished render
- * (export, handoff to a post). Throws `media_not_ready` when there is none, it is still
- * running, or it failed.
+ * The render that stands for a clip now, or null when it has none.
+ *
+ * An identical edit of the same source is rendered once per workspace (`requestClipRender`
+ * returns the existing job), so the render of a clip's current edit may be recorded under an
+ * earlier revision of the clip or under another clip of the same source. It is therefore found
+ * by what it shows (source, source version, profile and edit hash), not by `clip_id`:
+ * `currentEdit` is true and `revisionId` is the clip's current revision. Only when the current
+ * edit was never rendered is the newest render requested for this clip returned, with
+ * `currentEdit` false. A clip and every clip of the same source share the source's page, so
+ * this never reaches media of a page the caller was not authorised for.
  */
-export async function requireFinishedRender(tx: Tx, clipId: string) {
-  const render = await tx
+export async function findClipRender(tx: Tx, clipId: string) {
+  const clip = await tx
+    .selectFrom('clipProjects as p')
+    .innerJoin('clipRevisions as cur', 'cur.id', 'p.currentRevisionId')
+    .select(['p.sourceAssetId', 'p.sourceAssetVersion', 'cur.id as revisionId', 'cur.editHash'])
+    .where('p.id', '=', clipId)
+    .executeTakeFirst();
+  if (clip) {
+    const current = await tx
+      .selectFrom('renderJobs as r')
+      .innerJoin('mediaAssets as a', 'a.id', 'r.outputAssetId')
+      .innerJoin('clipRevisions as rv', 'rv.id', 'r.revisionId')
+      .select(RENDER_COLUMNS)
+      .where('r.sourceAssetId', '=', clip.sourceAssetId)
+      .where('r.sourceAssetVersion', '=', clip.sourceAssetVersion)
+      .where('r.profile', '=', CLIP_PROFILE)
+      .where('rv.editHash', '=', clip.editHash)
+      // IDs are UUIDv7 and break ties between jobs created in the same instant.
+      .orderBy('r.createdAt', 'desc')
+      .orderBy('r.id', 'desc')
+      .executeTakeFirst();
+    if (current) return { ...current, revisionId: clip.revisionId, currentEdit: true };
+  }
+  const newest = await tx
     .selectFrom('renderJobs as r')
     .innerJoin('mediaAssets as a', 'a.id', 'r.outputAssetId')
-    .select([
-      'r.id',
-      'r.revisionId',
-      'r.status',
-      'r.outputAssetId',
-      'a.status as assetStatus',
-      'a.objectKey',
-      'a.objectVersionId',
-      'a.originalFilename',
-      'a.declaredMime',
-      'a.sizeBytes',
-    ])
+    .select(RENDER_COLUMNS)
     .where('r.clipId', '=', clipId)
-    // IDs are UUIDv7 and break ties between jobs created in the same instant.
     .orderBy('r.createdAt', 'desc')
     .orderBy('r.id', 'desc')
     .executeTakeFirst();
+  return newest ? { ...newest, currentEdit: false } : null;
+}
+
+/**
+ * The render of a clip and its output asset (see `findClipRender`), for commands that need a
+ * finished render (export, handoff to a post). Throws `media_not_ready` when there is none, it
+ * is still running, or it failed.
+ */
+export async function requireFinishedRender(tx: Tx, clipId: string) {
+  const render = await findClipRender(tx, clipId);
   if (!render) throw new AppError('media_not_ready', 'Render this clip first.');
   if (render.status === 'failed' || render.assetStatus === 'rejected')
     throw new AppError('media_not_ready', 'The last render of this clip failed. Render it again.');

@@ -32,7 +32,7 @@ import {
   type AuthenticatedUser,
 } from './access';
 import { appendAudit } from './audit';
-import { requireFinishedRender } from './clip-render';
+import { findClipRender, requireFinishedRender } from './clip-render';
 import type { RequestMeta, ServiceContext } from './context';
 import { withIdempotency } from './idempotency';
 import { createPostIn } from './posts';
@@ -666,25 +666,8 @@ export async function getClip(
     const source = await loadSource(tx, project.sourceAssetId);
     if (!source) throw new AppError('not_found', 'Clip not found');
 
-    const render = await tx
-      .selectFrom('renderJobs as r')
-      .leftJoin('mediaAssets as a', 'a.id', 'r.outputAssetId')
-      .select([
-        'r.id',
-        'r.revisionId',
-        'r.status',
-        'r.errorCode',
-        'r.errorDetail',
-        'r.outputAssetId',
-        'a.status as outputAssetStatus',
-        'r.createdAt',
-        'r.finishedAt',
-      ])
-      .where('r.clipId', '=', clipId)
-      // IDs are UUIDv7 and break ties between jobs created in the same instant.
-      .orderBy('r.createdAt', 'desc')
-      .orderBy('r.id', 'desc')
-      .executeTakeFirst();
+    // Found by the edit it shows, so a render shared with an identical edit counts.
+    const render = await findClipRender(tx, clipId);
 
     const geometry =
       source.width && source.height && source.width >= 2 && source.height >= 2
@@ -700,7 +683,17 @@ export async function getClip(
       revision,
       source: sourceView(source),
       latestRender: render
-        ? { ...render, status: render.status as ClipRenderView['status'] }
+        ? {
+            id: render.id,
+            revisionId: render.revisionId,
+            status: render.status as ClipRenderView['status'],
+            errorCode: render.errorCode,
+            errorDetail: render.errorDetail,
+            outputAssetId: render.outputAssetId,
+            outputAssetStatus: render.assetStatus,
+            createdAt: render.createdAt,
+            finishedAt: render.finishedAt,
+          }
         : null,
       geometry,
     };
@@ -800,7 +793,7 @@ export async function createPostFromClip(
     if (!project) throw new AppError('not_found', 'Clip not found');
     authorize(member, 'content.create', project.pageId);
     const render = await requireFinishedRender(tx, clipId);
-    if (render.revisionId !== project.currentRevisionId)
+    if (!render.currentEdit)
       throw new AppError(
         'media_not_ready',
         'This clip was edited after its last render. Render it again first.',

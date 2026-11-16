@@ -61,7 +61,10 @@ export function UploadFlow({
   defaultPageId,
   statement,
   limits,
+  intent = 'post',
 }: {
+  /** `clips`: one source video, analysed after validation, then on to its suggestions. */
+  intent?: 'post' | 'clips';
   slug: string;
   workspaceId: string;
   pages: PageOption[];
@@ -84,6 +87,8 @@ export function UploadFlow({
   const [destinations, setDestinations] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const page = pages.find((p) => p.id === pageId);
+  const forClips = intent === 'clips';
+  const [handingOver, setHandingOver] = useState(false);
 
   const update = (key: string, patch: Partial<Item>) =>
     setItems((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -99,6 +104,10 @@ export function UploadFlow({
         );
         continue;
       }
+      if (forClips && type.kind !== 'video') {
+        setError(`${file.name} is not a video. Clips are cut from a video.`);
+        continue;
+      }
       const max = type.kind === 'video' ? limits.maxVideoBytes : limits.maxImageBytes;
       if (file.size > max) {
         setError(`${file.name} is ${formatBytes(file.size)}; the limit is ${formatBytes(max)}.`);
@@ -111,7 +120,11 @@ export function UploadFlow({
         loaded: 0,
       });
     }
-    setItems((list) => [...list, ...next].slice(0, limits.maxCarouselItems));
+    setItems((list) =>
+      forClips
+        ? next.slice(0, 1).concat(list).slice(0, 1)
+        : [...list, ...next].slice(0, limits.maxCarouselItems),
+    );
   }
 
   function move(index: number, delta: number) {
@@ -127,9 +140,13 @@ export function UploadFlow({
     if (!page || !declared || items.length === 0) return;
     setPhase('uploading');
     setError(null);
+    const readyAssetIds: string[] = [];
     await Promise.all(
       items.map(async (item) => {
-        if (item.status === 'ready') return;
+        if (item.status === 'ready') {
+          if (item.assetId) readyAssetIds.push(item.assetId);
+          return;
+        }
         update(item.key, { status: 'uploading', loaded: 0, message: undefined });
         try {
           const { assetId } = await uploadFile({
@@ -160,6 +177,7 @@ export function UploadFlow({
             { timeoutMs: 10 * 60_000 },
           );
           if (result.asset.status === 'ready') {
+            readyAssetIds.push(assetId);
             update(item.key, {
               status: 'ready',
               meta: {
@@ -187,6 +205,22 @@ export function UploadFlow({
         }
       }),
     );
+    if (forClips) {
+      const sourceId = readyAssetIds[0];
+      if (!sourceId) {
+        // Nothing usable: back to the selection so the file can be replaced.
+        setPhase('select');
+        return;
+      }
+      setHandingOver(true);
+      // Queue the analysis, then show its progress on the video's own screen. If it cannot be
+      // analysed (too long, for example) that screen says why and offers a manual range.
+      await apiFetch(`/api/v1/workspaces/${workspaceId}/assets/${sourceId}/analyses`, {
+        body: {},
+      }).catch(() => undefined);
+      router.push(`/w/${slug}/find-clips/${sourceId}`);
+      return;
+    }
     setPhase('compose');
     setDestinations(page.destinations.filter((d) => d.accountStatus === 'active').map((d) => d.id));
   }
@@ -243,7 +277,7 @@ export function UploadFlow({
       </Card>
 
       <Card className="r-stack">
-        <h2>2. Choose files</h2>
+        <h2>{forClips ? '2. Choose the video' : '2. Choose files'}</h2>
         <div
           className="drop-zone"
           data-active={dragActive ? 'true' : 'false'}
@@ -261,32 +295,41 @@ export function UploadFlow({
           <Upload aria-hidden width={28} height={28} />
           <p className="r-small">Drag files here, or</p>
           <Button onClick={() => inputRef.current?.click()} disabled={phase !== 'select'}>
-            Choose files
+            {forClips ? 'Choose a video' : 'Choose files'}
           </Button>
           <input
             ref={inputRef}
             type="file"
-            multiple
-            accept={Object.keys(ALLOWED_UPLOAD_TYPES).join(',')}
+            multiple={!forClips}
+            accept={Object.keys(ALLOWED_UPLOAD_TYPES)
+              .filter((mime) => !forClips || ALLOWED_UPLOAD_TYPES[mime]?.kind === 'video')
+              .join(',')}
             className="r-visually-hidden"
-            aria-label="Choose files to upload"
+            aria-label={forClips ? 'Choose a video to upload' : 'Choose files to upload'}
             data-testid="file-input"
             onChange={(e) => {
               if (e.target.files) addFiles(e.target.files);
               e.target.value = '';
             }}
           />
-          <p className="r-xs r-muted">
-            Video: MP4, MOV, WebM up to {formatBytes(limits.maxVideoBytes)}. Images: JPEG, PNG, WebP
-            up to {formatBytes(limits.maxImageBytes)}. Several images make a carousel (up to{' '}
-            {limits.maxCarouselItems}).
-          </p>
+          {forClips ? (
+            <p className="r-xs r-muted">
+              One video: MP4, MOV or WebM up to {formatBytes(limits.maxVideoBytes)}. Choosing
+              another file replaces it.
+            </p>
+          ) : (
+            <p className="r-xs r-muted">
+              Video: MP4, MOV, WebM up to {formatBytes(limits.maxVideoBytes)}. Images: JPEG, PNG,
+              WebP up to {formatBytes(limits.maxImageBytes)}. Several images make a carousel (up to{' '}
+              {limits.maxCarouselItems}).
+            </p>
+          )}
         </div>
         {items.length > 0 ? (
           <ol
             className="r-stack-sm"
             style={{ listStyle: 'none', margin: 0, padding: 0 }}
-            aria-label="Selected files (in carousel order)"
+            aria-label={forClips ? 'Selected video' : 'Selected files (in carousel order)'}
           >
             {items.map((item, index) => (
               <li
@@ -308,20 +351,24 @@ export function UploadFlow({
                     <ItemStatusBadge status={item.status} />
                     {phase === 'select' ? (
                       <>
-                        <Button
-                          variant="ghost"
-                          aria-label={`Move ${item.file.name} earlier`}
-                          icon={<ArrowUp aria-hidden />}
-                          disabled={index === 0}
-                          onClick={() => move(index, -1)}
-                        />
-                        <Button
-                          variant="ghost"
-                          aria-label={`Move ${item.file.name} later`}
-                          icon={<ArrowDown aria-hidden />}
-                          disabled={index === items.length - 1}
-                          onClick={() => move(index, 1)}
-                        />
+                        {forClips ? null : (
+                          <>
+                            <Button
+                              variant="ghost"
+                              aria-label={`Move ${item.file.name} earlier`}
+                              icon={<ArrowUp aria-hidden />}
+                              disabled={index === 0}
+                              onClick={() => move(index, -1)}
+                            />
+                            <Button
+                              variant="ghost"
+                              aria-label={`Move ${item.file.name} later`}
+                              icon={<ArrowDown aria-hidden />}
+                              disabled={index === items.length - 1}
+                              onClick={() => move(index, 1)}
+                            />
+                          </>
+                        )}
                         <Button
                           variant="ghost"
                           aria-label={`Remove ${item.file.name}`}
@@ -401,11 +448,20 @@ export function UploadFlow({
               disabled={!declared || items.length === 0 || !page}
               onClick={startUploads}
             >
-              Upload{' '}
-              {items.length > 0 ? `${items.length} file${items.length === 1 ? '' : 's'}` : ''}
+              {forClips
+                ? 'Upload and analyse'
+                : `Upload ${items.length > 0 ? `${items.length} file${items.length === 1 ? '' : 's'}` : ''}`}
             </Button>
           </div>
         </Card>
+      ) : null}
+
+      {forClips && phase === 'uploading' ? (
+        <p className="r-small" role="status">
+          {handingOver
+            ? 'The video is ready. Starting the analysis and opening its suggestions.'
+            : 'Uploading and validating. Keep this page open; the analysis starts as soon as the video is ready.'}
+        </p>
       ) : null}
 
       {phase === 'compose' ? (

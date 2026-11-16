@@ -101,9 +101,9 @@ provider write; repeated 429s give up without dispatching; rights revoked after 
 
 | Suite                                       | Command                                                        | Result                |
 | ------------------------------------------- | -------------------------------------------------------------- | --------------------- |
-| Unit                                        | `pnpm test`                                                    | 227 passed (20 files) |
-| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 61 passed (7 files)   |
-| End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 16 passed             |
+| Unit                                        | `pnpm test`                                                    | 363 passed (26 files) |
+| Integration (real Postgres, S3, FFmpeg)     | `pnpm test:integration`                                        | 135 passed (12 files) |
+| End-to-end (Playwright, production build)   | `pnpm test:e2e`                                                | 18 passed             |
 | E2E against container images                | `E2E_BASE_URL=… pnpm --filter @relay/web exec playwright test` | 14 passed             |
 | Uploads with FFmpeg inside the worker image | uploads suite with image-backed `FFPROBE_PATH`/`FFMPEG_PATH`   | 16 passed             |
 | Lint (ESLint, zero warnings) + source check | `pnpm lint`                                                    | clean                 |
@@ -149,6 +149,22 @@ None of these can be completed from code; each needs a separate operator action.
   `https://<host>/api/auth/oidc/callback`, managed Postgres with the three roles, private bucket and CORS.
 - **Design:** the Relay Design System kit (`Relay_Design_System.zip`) was not provided; vector
   marks are stand-ins (see `design/relay/README.md`).
+
+## M2 · Source to clip (in progress, 2026-11-16)
+
+Built and covered by tests, plan in `docs/plans/m2-clipping.md` (steps 1 to 13):
+upload a source video, `asset.analyze` (features through the FFmpeg sandbox, deterministic
+highlight ranker, candidates with reasons), non-destructive clip editor (range, 9:16 / 1:1 /
+original, fit or fill, captions with SRT/VTT import), `clip.render` into a derived asset
+keyed by the edit, export, and hand-off to a draft post through the existing approval and
+scheduling flow. Rights are inherited from the source by lineage: revoking the source blocks
+its clips at submit, approval, scheduling and dispatch (`clip-handoff.test.ts`).
+
+Not done yet from M2: URL resolver and public references without media, time alignment and
+stream signals, the stuck-job sweep for analyses and renders (plan step 14), a variable
+frame-rate fixture, an accessibility (axe) pass on the new screens, and marking seeded demo
+videos as samples. Thumbnails in lists are signed without the `view` rights check that proxies
+and exports have. Not verified on hosted staging.
 
 ## Known constraints and gaps
 

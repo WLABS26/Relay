@@ -46,10 +46,12 @@ RUN --mount=type=cache,id=relay-pnpm-store,target=/pnpm/store \
 
 # ---- runtime ---------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE} AS runtime
+# fonts-inter is the caption font for burned-in clip captions (RELAY_MEDIA_FONTS_DIR default,
+# /usr/share/fonts/opentype/inter, SIL Open Font License).
 # ffmpeg/ffprobe for media validation (run sandboxed by the worker); tini reaps any orphaned
 # child processes and forwards signals so in-flight jobs drain on SIGTERM.
 RUN apt-get -o Acquire::Retries=5 update \
- && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends ffmpeg tini \
+ && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends ffmpeg tini fonts-inter \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 10001 relay \
  && useradd --system --uid 10001 --gid relay --no-create-home --shell /usr/sbin/nologin relay

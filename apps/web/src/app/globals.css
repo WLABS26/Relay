@@ -427,3 +427,388 @@
   gap: 4px;
   align-items: center;
 }
+
+/* ----- Find clips: sources, suggestions, clip editor ------------------------------------ */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.back-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+.page-title-wrap {
+  overflow-wrap: anywhere;
+}
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.clip-sources,
+.candidate-list,
+.clip-links,
+.cue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.clip-source {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr) auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-4);
+}
+.clip-source__thumb {
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.clip-source__title {
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+.clip-source__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.clip-source-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+.clip-source-layout__player,
+.clip-editor__stage {
+  position: sticky;
+  /* Below the sticky top bar. */
+  top: 88px;
+}
+.clip-player {
+  /* The picture area of a player is black in both themes, like the rendered bars. */
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+}
+.clip-player video {
+  display: block;
+  width: 100%;
+  max-height: min(56vh, 480px);
+}
+.candidate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.candidate[data-active='true'] {
+  border-color: var(--color-text);
+}
+.candidate h3 {
+  font-size: var(--text-md);
+}
+.candidate__rank {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-sunken);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.candidate__feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: var(--space-3);
+}
+.feedback-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.feedback-chip:hover {
+  background: var(--color-surface-sunken);
+  color: var(--color-text);
+}
+.feedback-chip[aria-pressed='true'] {
+  background: var(--color-surface-sunken);
+  border-color: var(--color-text);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+.feedback-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.clip-links li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.clip-links li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.range-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.clip-editor {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+.crop-stage {
+  position: relative;
+  overflow: hidden;
+  /* The renderer pads with black; the preview shows the same bars in both themes. */
+  background: #000;
+  border-radius: var(--radius-sm);
+  container-type: size;
+  aspect-ratio: var(--clip-ar);
+  /* As wide as the column allows, but never taller than most of the viewport. */
+  width: min(100%, calc(min(60vh, 560px) * var(--clip-ar)));
+  margin: 0 auto;
+}
+.crop-stage__video {
+  position: absolute;
+  max-width: none;
+  /* The box already has the scaled picture's size, so the frame is stretched to it exactly. */
+  object-fit: fill;
+}
+.crop-stage__caption {
+  position: absolute;
+  left: 5cqw;
+  right: 5cqw;
+  bottom: 10cqh;
+  margin: 0;
+  text-align: center;
+  white-space: pre-line;
+  color: #fff;
+  font-weight: 700;
+  /* Same rule as the burned-in style: 5% of the height, capped by the width. */
+  font-size: max(8px, min(5cqh, 3.846cqw));
+  line-height: 1.2;
+  text-shadow:
+    0 0 2px #000,
+    1px 1px 0 #000,
+    -1px 1px 0 #000,
+    1px -1px 0 #000,
+    -1px -1px 0 #000;
+  pointer-events: none;
+}
+.trim-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* Room for half a handle at either end of the track. */
+  padding: var(--space-2) 22px 0;
+}
+.trim-track {
+  position: relative;
+  height: 72px;
+  background: var(--color-surface-sunken);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.trim-wave {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: var(--color-text-muted);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.trim-wave--empty {
+  background: linear-gradient(var(--color-border), var(--color-border)) center / 100% 1px no-repeat;
+  opacity: 1;
+}
+.trim-shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-bg);
+  opacity: 0.72;
+  pointer-events: none;
+}
+.trim-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-block: 3px solid var(--color-primary);
+  pointer-events: none;
+}
+.trim-playhead {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text);
+  pointer-events: none;
+}
+.trim-playhead::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-text);
+}
+.trim-thumb {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  /* A 44 px target centred on the edge it moves. */
+  width: var(--target-min);
+  margin-left: calc(var(--target-min) / -2);
+  display: flex;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.trim-thumb::after {
+  content: '';
+  width: 10px;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-bg);
+}
+.trim-thumb:focus-visible {
+  z-index: 2;
+}
+.trim-bar[data-disabled='true'] .trim-thumb {
+  cursor: default;
+}
+.trim-bar[data-disabled='true'] .trim-thumb::after {
+  opacity: 0.5;
+}
+.trim-scale {
+  display: flex;
+  justify-content: space-between;
+}
+.playhead-slider {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+}
+.playhead-slider input {
+  width: 100%;
+  min-height: 28px;
+  accent-color: var(--color-primary);
+}
+.cue-list {
+  max-height: 70vh;
+  overflow-y: auto;
+  /* Keeps focus rings of the fields inside the scroll area visible. */
+  padding: 2px;
+}
+.cue-row {
+  display: grid;
+  grid-template-columns: 108px 108px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+.cue-row__textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+.cue-row__actions {
+  display: flex;
+  /* Lines the buttons up with the fields, below their labels. */
+  padding-top: 22px;
+}
+
+@media (max-width: 960px) {
+  .clip-source-layout,
+  .clip-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .clip-source-layout__player,
+  .clip-editor__stage {
+    position: static;
+  }
+  .crop-stage {
+    width: min(100%, calc(min(50vh, 440px) * var(--clip-ar)));
+  }
+}
+@media (max-width: 640px) {
+  .clip-source {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .clip-source__thumb {
+    width: 96px;
+    align-self: start;
+  }
+  .clip-source__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+  .cue-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cue-row__text,
+  .cue-row__actions {
+    grid-column: 1 / -1;
+  }
+  .cue-row__actions {
+    padding-top: 0;
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 420px) {
+  .range-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.clip-player--output video {
+  max-height: min(50vh, 420px);
+}
