@@ -6,6 +6,7 @@ import {
   rollupStates,
   STATE_LABELS,
   updatePostSchema,
+  type CreatePostInput,
   type DestinationState,
   type Visibility,
 } from '@relay/domain';
@@ -181,106 +182,124 @@ export async function createPost(
   options: { isSample?: boolean } = {},
 ) {
   const input = createPostSchema.parse(rawInput);
-  return inWorkspace(ctx, user, workspaceId, async (tx, member) => {
-    authorize(member, 'content.create', input.pageId);
-    await requirePage(tx, member, input.pageId);
-    return withIdempotency(
-      tx,
-      {
-        workspaceId,
-        operation: 'posts.create',
-        key: meta.idempotencyKey,
-        actorUserId: user.userId,
-        payload: input,
-      },
-      async () => {
-        await loadAssetsForRevision(tx, input.pageId, input.mediaAssetIds);
-        const destinations = await tx
-          .selectFrom('pageDestinations')
-          .select(['id', 'defaultVisibility', 'enabled', 'archivedAt', 'pageId'])
-          .where('id', 'in', input.destinationIds)
-          .execute();
-        if (
-          destinations.length !== new Set(input.destinationIds).size ||
-          destinations.some((d) => d.pageId !== input.pageId || d.archivedAt || !d.enabled)
-        ) {
-          throw new AppError('validation_failed', 'Choose destinations that belong to this page.', {
-            fieldErrors: { destinationIds: ['Unknown destination'] },
+  return inWorkspace(ctx, user, workspaceId, (tx, member) =>
+    createPostIn(ctx, tx, member, workspaceId, input, meta, options),
+  );
+}
+
+/**
+ * `createPost` inside the caller's tenant transaction, for commands that create a post as part
+ * of a larger change (for example handing a rendered clip over to a draft). `input` must
+ * already be parsed with `createPostSchema`.
+ */
+export async function createPostIn(
+  ctx: ServiceContext,
+  tx: Tx,
+  member: Member,
+  workspaceId: string,
+  input: CreatePostInput,
+  meta: RequestMeta & { idempotencyKey?: string | null },
+  options: { isSample?: boolean } = {},
+) {
+  const user = { userId: member.userId };
+  authorize(member, 'content.create', input.pageId);
+  await requirePage(tx, member, input.pageId);
+  return withIdempotency(
+    tx,
+    {
+      workspaceId,
+      operation: 'posts.create',
+      key: meta.idempotencyKey,
+      actorUserId: user.userId,
+      payload: input,
+    },
+    async () => {
+      await loadAssetsForRevision(tx, input.pageId, input.mediaAssetIds);
+      const destinations = await tx
+        .selectFrom('pageDestinations')
+        .select(['id', 'defaultVisibility', 'enabled', 'archivedAt', 'pageId'])
+        .where('id', 'in', input.destinationIds)
+        .execute();
+      if (
+        destinations.length !== new Set(input.destinationIds).size ||
+        destinations.some((d) => d.pageId !== input.pageId || d.archivedAt || !d.enabled)
+      ) {
+        throw new AppError('validation_failed', 'Choose destinations that belong to this page.', {
+          fieldErrors: { destinationIds: ['Unknown destination'] },
+        });
+      }
+      if (input.campaignId) {
+        const campaign = await tx
+          .selectFrom('campaigns')
+          .select(['id', 'pageId'])
+          .where('id', '=', input.campaignId)
+          .where('archivedAt', 'is', null)
+          .executeTakeFirst();
+        if (!campaign || (campaign.pageId && campaign.pageId !== input.pageId))
+          throw new AppError('validation_failed', 'Unknown campaign.', {
+            fieldErrors: { campaignId: ['Unknown campaign'] },
           });
-        }
-        if (input.campaignId) {
-          const campaign = await tx
-            .selectFrom('campaigns')
-            .select(['id', 'pageId'])
-            .where('id', '=', input.campaignId)
-            .where('archivedAt', 'is', null)
-            .executeTakeFirst();
-          if (!campaign || (campaign.pageId && campaign.pageId !== input.pageId))
-            throw new AppError('validation_failed', 'Unknown campaign.', {
-              fieldErrors: { campaignId: ['Unknown campaign'] },
-            });
-        }
-        const postId = ctx.ids.next();
+      }
+      const postId = ctx.ids.next();
+      await tx
+        .insertInto('posts')
+        .values({
+          id: postId,
+          workspaceId,
+          pageId: input.pageId,
+          campaignId: input.campaignId,
+          title: input.title?.trim() || null,
+          createdBy: user.userId,
+          isSample: options.isSample ?? false,
+        })
+        .execute();
+      for (const d of destinations) {
         await tx
-          .insertInto('posts')
+          .insertInto('postDestinations')
           .values({
-            id: postId,
+            id: ctx.ids.next(),
             workspaceId,
-            pageId: input.pageId,
-            campaignId: input.campaignId,
-            title: input.title?.trim() || null,
-            createdBy: user.userId,
-            isSample: options.isSample ?? false,
+            postId,
+            pageDestinationId: d.id,
+            state: 'draft',
           })
           .execute();
-        for (const d of destinations) {
-          await tx
-            .insertInto('postDestinations')
-            .values({
-              id: ctx.ids.next(),
-              workspaceId,
-              postId,
-              pageDestinationId: d.id,
-              state: 'draft',
-            })
-            .execute();
-        }
-        const targets = await loadDestinationTargets(tx, postId);
-        const { revisionId } = await writeRevision(tx, ctx, {
-          workspaceId,
-          postId,
-          revisionNumber: 1,
-          userId: user.userId,
-          content: input,
-          targets,
-          defaultVisibility: new Map(
-            destinations.map((d) => [d.id, d.defaultVisibility as Visibility]),
-          ),
-        });
-        await tx
-          .updateTable('posts')
-          .set({ currentRevisionId: revisionId })
-          .where('id', '=', postId)
-          .execute();
-        await appendAudit(tx, ctx.ids, {
-          workspaceId,
-          actor: memberActor(member),
-          action: 'post.created',
-          entityType: 'post',
-          entityId: postId,
-          pageId: input.pageId,
-          postId,
-          data: {
-            revisionId,
-            destinations: destinations.length,
-            media: input.mediaAssetIds.length,
-          },
-          requestId: meta.requestId,
-        });
-        return { status: 201, body: { postId, revisionId } };
-      },
-    );
-  });
+      }
+      const targets = await loadDestinationTargets(tx, postId);
+      const { revisionId } = await writeRevision(tx, ctx, {
+        workspaceId,
+        postId,
+        revisionNumber: 1,
+        userId: user.userId,
+        content: input,
+        targets,
+        defaultVisibility: new Map(
+          destinations.map((d) => [d.id, d.defaultVisibility as Visibility]),
+        ),
+      });
+      await tx
+        .updateTable('posts')
+        .set({ currentRevisionId: revisionId })
+        .where('id', '=', postId)
+        .execute();
+      await appendAudit(tx, ctx.ids, {
+        workspaceId,
+        actor: memberActor(member),
+        action: 'post.created',
+        entityType: 'post',
+        entityId: postId,
+        pageId: input.pageId,
+        postId,
+        data: {
+          revisionId,
+          destinations: destinations.length,
+          media: input.mediaAssetIds.length,
+        },
+        requestId: meta.requestId,
+      });
+      return { status: 201, body: { postId, revisionId } };
+    },
+  );
 }
 
 export async function updatePost(

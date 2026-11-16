@@ -170,6 +170,17 @@ const envSchema = z.object({
   RELAY_MEDIA_MEMORY_LIMIT_MB: intFromEnv(64, 65536).default(2048),
   RELAY_MEDIA_THREADS: intFromEnv(1, 64).default(2),
   RELAY_MEDIA_USE_PRLIMIT: boolFromEnv.default(true),
+  /** CPU-time cap per FFmpeg process; unset means the wall-clock timeout times the threads. */
+  RELAY_MEDIA_CPU_SECONDS: optionalString.pipe(intFromEnv(5, 60 * 60 * 24 * 7).optional()),
+  /** Directory holding the caption font (Inter). Caption renders fail when it is missing. */
+  RELAY_MEDIA_FONTS_DIR: z.string().trim().min(1).default('/usr/share/fonts/opentype/inter'),
+
+  // Clipping
+  RELAY_CLIP_MAX_SECONDS: intFromEnv(1, 60 * 60).default(180),
+  RELAY_CLIP_MAX_OUTPUT_BYTES: intFromEnv(1024 ** 2, Number.MAX_SAFE_INTEGER).default(
+    512 * 1024 ** 2,
+  ),
+  RELAY_ANALYSIS_MAX_SOURCE_SECONDS: intFromEnv(1, 24 * 60 * 60).default(4 * 60 * 60),
 
   // Worker
   RELAY_WORKER_POOLS: z.string().default('general,media'),
@@ -272,6 +283,15 @@ export interface RelayConfig {
     memoryLimitMb: number;
     threads: number;
     usePrlimit: boolean;
+    /** Undefined: the media tools derive it from the timeout and thread count. */
+    cpuSeconds: number | undefined;
+    fontsDir: string;
+    /** Longest range the clip editor accepts. */
+    clipMaxSeconds: number;
+    /** Hard cap on one rendered clip; also the most a render reserves against the quota. */
+    clipMaxOutputBytes: number;
+    /** Sources longer than this are not analysed for highlights. */
+    analysisMaxSourceSeconds: number;
   };
   worker: {
     pools: Array<'general' | 'media'>;
@@ -637,6 +657,11 @@ export function parseConfig(rawSource: Record<string, string | undefined>): Rela
       memoryLimitMb: e.RELAY_MEDIA_MEMORY_LIMIT_MB,
       threads: e.RELAY_MEDIA_THREADS,
       usePrlimit: e.RELAY_MEDIA_USE_PRLIMIT,
+      cpuSeconds: e.RELAY_MEDIA_CPU_SECONDS,
+      fontsDir: e.RELAY_MEDIA_FONTS_DIR,
+      clipMaxSeconds: e.RELAY_CLIP_MAX_SECONDS,
+      clipMaxOutputBytes: e.RELAY_CLIP_MAX_OUTPUT_BYTES,
+      analysisMaxSourceSeconds: e.RELAY_ANALYSIS_MAX_SOURCE_SECONDS,
     },
     worker: {
       pools: pools as Array<'general' | 'media'>,

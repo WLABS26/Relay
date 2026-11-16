@@ -44,7 +44,18 @@ export interface UploadStartResponse {
   multipart?: { partSize: number; partCount: number; lastPartSize: number };
 }
 
-async function workspaceStorageUsage(tx: Tx): Promise<{ used: number; quota: number }> {
+/**
+ * Serialise quota decisions for one workspace until the transaction ends, so concurrent
+ * uploads and renders cannot jointly overshoot the quota.
+ */
+export async function lockWorkspaceQuota(tx: Tx, workspaceId: string): Promise<void> {
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${workspaceId}`}, 0))`.execute(
+    tx,
+  );
+}
+
+/** Bytes counted against the quota: live assets (reserved size while validating), variants and open upload reservations. */
+export async function workspaceStorageUsage(tx: Tx): Promise<{ used: number; quota: number }> {
   const usage = await sql<{ used: string; quota: string }>`
     SELECT
       COALESCE((SELECT sum(size_bytes) FROM media_assets WHERE status IN ('validating', 'ready')), 0)
@@ -135,9 +146,7 @@ export async function startUpload(
         async () => {
           // Quota is checked under a per-workspace advisory lock so concurrent uploads cannot
           // jointly overshoot it.
-          await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`quota:${workspaceId}`}, 0))`.execute(
-            tx,
-          );
+          await lockWorkspaceQuota(tx, workspaceId);
           const { used, quota } = await workspaceStorageUsage(tx);
           if (used + input.sizeBytes > quota) {
             throw new AppError(

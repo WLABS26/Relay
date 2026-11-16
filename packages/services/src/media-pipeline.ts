@@ -38,16 +38,23 @@ import type { TaskPayload } from './tasks';
 
 export const RENDERER_VERSION_PREFIX = 'relay-media@1';
 
-class Rejection extends Error {
+/** Why `asset.probe` rejects an upload for good. */
+export type ProbeRejectionCode = ValidationFailureCode | 'checksum_mismatch' | 'processing_failed';
+
+/**
+ * A permanent failure with a specific code: retrying the task cannot change the outcome, so
+ * the handler records the code instead of rethrowing. Shared by the media-pool handlers.
+ */
+export class Rejection<C extends string = ProbeRejectionCode> extends Error {
   constructor(
-    readonly code: ValidationFailureCode | 'checksum_mismatch' | 'processing_failed',
+    readonly code: C,
     readonly detail: string,
   ) {
     super(detail);
   }
 }
 
-function toolConfig(ctx: ServiceContext): MediaToolConfig {
+export function toolConfig(ctx: ServiceContext): MediaToolConfig {
   return {
     ffmpegPath: ctx.config.media.ffmpegPath,
     ffprobePath: ctx.config.media.ffprobePath,
@@ -55,11 +62,14 @@ function toolConfig(ctx: ServiceContext): MediaToolConfig {
     memoryLimitMb: ctx.config.media.memoryLimitMb,
     threads: ctx.config.media.threads,
     usePrlimit: ctx.config.media.usePrlimit,
+    ...(ctx.config.media.cpuSeconds === undefined
+      ? {}
+      : { cpuSeconds: ctx.config.media.cpuSeconds }),
   };
 }
 
 /** Keep only normalised, non-identifying probe facts (drop tags, encoder strings, metadata). */
-function sanitizeProbe(probe: ProbeSummary) {
+export function sanitizeProbe(probe: ProbeSummary) {
   return {
     formatName: probe.formatName,
     durationMs: probe.durationMs,
@@ -360,9 +370,9 @@ export async function processAssetProbe(
     });
     return 'ready';
   } catch (error) {
-    const rejection =
+    const rejection: Rejection | null =
       error instanceof Rejection
-        ? error
+        ? (error as Rejection)
         : attempt.number >= attempt.max
           ? new Rejection(
               'processing_failed',

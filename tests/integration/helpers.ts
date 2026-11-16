@@ -364,3 +364,58 @@ export async function expectAppError(promise: Promise<unknown>, code: string) {
   if (error.code !== code) throw new Error(`expected ${code}, got ${error.code}: ${error.message}`);
   return error;
 }
+
+/**
+ * Make a clip from a range of a ready source, optionally save an edit (aspect, crop mode,
+ * captions), request its render and run the worker task, the way the editor and the media
+ * pool would.
+ */
+export async function renderClipOf(
+  c: Contexts,
+  tenant: Pick<Tenant, 'workspaceId'>,
+  user: AuthenticatedUser,
+  sourceAssetId: string,
+  range: { startMs: number; endMs: number },
+  options: { edit?: Record<string, unknown>; process?: boolean } = {},
+) {
+  const { createClip, updateClip, requestClipRender } = await import('@relay/services');
+  const { processClipRender } = await import('@relay/services/clip-render');
+  const created = await createClip(
+    c.app,
+    user,
+    tenant.workspaceId,
+    { sourceAssetId, ...range },
+    meta,
+  );
+  const clipId = created.body.clipId;
+  let revisionId = created.body.revisionId;
+  if (options.edit) {
+    const saved = await updateClip(
+      c.app,
+      user,
+      tenant.workspaceId,
+      clipId,
+      {
+        version: created.body.version,
+        ...range,
+        aspect: '9:16',
+        cropMode: 'fill',
+        captions: null,
+        ...options.edit,
+      },
+      meta,
+    );
+    revisionId = saved.revision.id;
+  }
+  const requested = await requestClipRender(c.app, user, tenant.workspaceId, clipId, {}, meta);
+  const { renderJobId, outputAssetId } = requested.body;
+  const outcome =
+    options.process === false
+      ? null
+      : await processClipRender(
+          c.worker,
+          { workspaceId: tenant.workspaceId, renderJobId },
+          { number: 1, max: 3 },
+        );
+  return { clipId, revisionId, renderJobId, outputAssetId, requested, outcome };
+}

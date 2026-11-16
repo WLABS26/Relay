@@ -28,14 +28,17 @@ import {
   type ServiceContext,
   type TaskName,
 } from '@relay/services';
+import { processAssetAnalysis } from '@relay/services/analysis';
 import { bootstrapDeployment } from '@relay/services/bootstrap';
+import { processClipRender } from '@relay/services/clip-render';
 import { processAssetProbe } from '@relay/services/media-pipeline';
 
 /**
  * Relay worker: long-lived Node process running Graphile Worker task pools.
  *
  *   general  publish.advance / publish.reconcile / metrics.refresh / maintenance.* (+ cron)
- *   media    asset.probe (FFmpeg; capped concurrency so encodes cannot starve publishing)
+ *   media    asset.probe / asset.analyze / clip.render (FFmpeg; capped concurrency so encodes
+ *            cannot starve publishing)
  *
  * RELAY_WORKER_POOLS selects which pools this process runs (both by default locally; one per
  * container in production). Each pool only claims jobs for its own task identifiers.
@@ -168,6 +171,16 @@ function handlers(pool: 'general' | 'media'): TaskList {
       case 'asset.probe':
         list[name] = wrap(name, (p, attempt) =>
           processAssetProbe(ctx, parseTaskPayload(name, p), attempt),
+        );
+        break;
+      case 'asset.analyze':
+        list[name] = wrap(name, (p, attempt) =>
+          processAssetAnalysis(ctx, parseTaskPayload(name, p), attempt),
+        );
+        break;
+      case 'clip.render':
+        list[name] = wrap(name, (p, attempt) =>
+          processClipRender(ctx, parseTaskPayload(name, p), attempt),
         );
         break;
       case 'publish.advance':

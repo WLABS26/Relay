@@ -8,6 +8,7 @@ import {
   type Member,
 } from './access';
 import type { ServiceContext } from './context';
+import { evaluateRights, RIGHTS_PROBLEM_LABELS } from './rights';
 
 export type MediaUrlVariant = 'thumbnail' | 'proxy' | 'original';
 
@@ -100,7 +101,9 @@ export async function getAsset(
 /**
  * Mint a short-lived signed URL for one exact object version after authorising the caller
  * for the asset's page. URLs are never stored and never minted for assets that are still in
- * quarantine (originals become viewable only once validated).
+ * quarantine (originals become viewable only once validated), or for media whose recorded
+ * rights do not allow viewing it now. A rendered clip follows its source's rights, so revoking
+ * the source also ends previews of its clips.
  */
 export async function mediaUrl(
   ctx: ServiceContext,
@@ -127,6 +130,21 @@ export async function mediaUrl(
     authorize(member, 'media.view', asset.pageId);
     if (asset.status !== 'ready')
       throw new AppError('media_not_ready', 'This media is still being validated or was rejected.');
+    const rights = await evaluateRights(tx, {
+      assetIds: [asset.id],
+      operation: 'view',
+      at: ctx.clock.now(),
+    });
+    if (!rights.ok) {
+      const reason = rights.problems[0]?.reason ?? 'no_grant';
+      throw new AppError(
+        'rights_missing',
+        reason === 'operation_denied'
+          ? 'The recorded rights do not allow viewing this media.'
+          : RIGHTS_PROBLEM_LABELS[reason],
+        { details: { problems: rights.problems } },
+      );
+    }
     if (variant === 'original') {
       return {
         key: asset.objectKey,

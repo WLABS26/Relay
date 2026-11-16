@@ -5,7 +5,8 @@ import { existsSync } from 'node:fs';
  * Sandboxed execution of media binaries.
  *
  *  - argv arrays only: no shell, no interpolation;
- *  - a minimal environment (PATH only) so credentials never reach the child;
+ *  - a minimal environment (PATH and locale, plus fixed variables a caller names explicitly)
+ *    so credentials never reach the child;
  *  - stdin closed; stdout/stderr capped;
  *  - its own process group, killed as a group on timeout or abort;
  *  - optional prlimit caps on address space, CPU time and output file size.
@@ -30,6 +31,17 @@ export interface RunResult {
   stderr: string;
   timedOut: boolean;
   durationMs: number;
+}
+
+export interface RunOptions {
+  cwd?: string;
+  signal?: AbortSignal;
+  /**
+   * Extra variables for the child, on top of PATH and LC_ALL. Nothing is inherited from this
+   * process, so a caller can only pass what it builds itself (for example the path of a
+   * fontconfig file inside the scratch directory).
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 export class ToolError extends Error {
@@ -59,7 +71,7 @@ export async function runTool(
   command: string,
   args: readonly string[],
   limits: RunLimits,
-  options: { cwd?: string; signal?: AbortSignal } = {},
+  options: RunOptions = {},
 ): Promise<RunResult> {
   let file = command;
   let argv = [...args];
@@ -84,6 +96,7 @@ export async function runTool(
       cwd: options.cwd,
       // Minimal environment: no credentials or config reach the media binary.
       env: {
+        ...options.env,
         PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
         LC_ALL: 'C',
       } as unknown as NodeJS.ProcessEnv,
@@ -154,7 +167,7 @@ export async function runToolOrThrow(
   command: string,
   args: readonly string[],
   limits: RunLimits,
-  options: { cwd?: string; signal?: AbortSignal } = {},
+  options: RunOptions = {},
 ): Promise<RunResult> {
   const result = await runTool(command, args, limits, options);
   if (result.timedOut)

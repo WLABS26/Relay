@@ -152,3 +152,45 @@ function walk(buf: Buffer, state: ScanState, depth: number): void {
     offset += size;
   }
 }
+
+/** Top-level box types in file order, capped at `maxBoxes`. Reads box headers only. */
+export async function topLevelBoxTypes(path: string, maxBoxes = 64): Promise<string[]> {
+  const handle = await open(path, 'r');
+  const types: string[] = [];
+  try {
+    const { size: fileSize } = await handle.stat();
+    const header = Buffer.alloc(16);
+    let offset = 0;
+    while (offset + 8 <= fileSize && types.length < maxBoxes) {
+      const { bytesRead } = await handle.read(header, 0, 16, offset);
+      let boxSize = header.readUInt32BE(0);
+      let headerLen = 8;
+      if (boxSize === 1) {
+        if (bytesRead < 16) break;
+        const big = header.readBigUInt64BE(8);
+        if (big > BigInt(Number.MAX_SAFE_INTEGER)) break;
+        boxSize = Number(big);
+        headerLen = 16;
+      } else if (boxSize === 0) {
+        boxSize = fileSize - offset;
+      }
+      if (boxSize < headerLen || offset + boxSize > fileSize) break;
+      types.push(header.toString('latin1', 4, 8));
+      offset += boxSize;
+    }
+  } finally {
+    await handle.close();
+  }
+  return types;
+}
+
+/**
+ * True when an MP4 can start playing before it has fully downloaded: the `moov` index comes
+ * before the first `mdat` payload.
+ */
+export async function isFastStartMp4(path: string): Promise<boolean> {
+  const types = await topLevelBoxTypes(path);
+  const moov = types.indexOf('moov');
+  const mdat = types.indexOf('mdat');
+  return types[0] === 'ftyp' && moov > 0 && mdat > moov;
+}

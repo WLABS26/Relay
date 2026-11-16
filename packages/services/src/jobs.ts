@@ -105,6 +105,58 @@ export async function getJobRun(
         },
       };
     }
+    if (job.entityType === 'media_analysis') {
+      const analysis = await tx
+        .selectFrom('mediaAnalyses as m')
+        .innerJoin('mediaAssets as a', 'a.id', 'm.assetId')
+        .select(['a.pageId', 'm.assetId', 'm.status', 'm.errorCode', 'm.errorDetail'])
+        .where('m.id', '=', job.entityId)
+        .executeTakeFirst();
+      if (!analysis) throw new AppError('not_found', 'Job not found');
+      authorize(member, 'media.view', analysis.pageId);
+      return {
+        job,
+        entity: {
+          type: 'media_analysis',
+          id: job.entityId,
+          assetId: analysis.assetId,
+          status: analysis.status,
+          errorCode: analysis.errorCode,
+          errorDetail: analysis.errorDetail,
+        },
+      };
+    }
+    if (job.entityType === 'render_job') {
+      const render = await tx
+        .selectFrom('renderJobs as r')
+        .innerJoin('clipProjects as p', 'p.id', 'r.clipId')
+        .select([
+          'p.pageId',
+          'r.clipId',
+          'r.revisionId',
+          'r.outputAssetId',
+          'r.status',
+          'r.errorCode',
+          'r.errorDetail',
+        ])
+        .where('r.id', '=', job.entityId)
+        .executeTakeFirst();
+      if (!render) throw new AppError('not_found', 'Job not found');
+      authorize(member, 'media.view', render.pageId);
+      return {
+        job,
+        entity: {
+          type: 'render_job',
+          id: job.entityId,
+          clipId: render.clipId,
+          revisionId: render.revisionId,
+          outputAssetId: render.outputAssetId,
+          status: render.status,
+          errorCode: render.errorCode,
+          errorDetail: render.errorDetail,
+        },
+      };
+    }
     return { job, entity: { type: job.entityType, id: job.entityId } };
   });
 }

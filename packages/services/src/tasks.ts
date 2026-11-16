@@ -20,6 +20,24 @@ export const TASKS = {
     }),
     maxAttempts: 3,
   },
+  'asset.analyze': {
+    pool: 'media',
+    schema: z.object({
+      workspaceId: id,
+      analysisId: id,
+      correlationId: z.string().max(100).optional(),
+    }),
+    maxAttempts: 3,
+  },
+  'clip.render': {
+    pool: 'media',
+    schema: z.object({
+      workspaceId: id,
+      renderJobId: id,
+      correlationId: z.string().max(100).optional(),
+    }),
+    maxAttempts: 3,
+  },
   'publish.advance': {
     pool: 'general',
     schema: z.object({

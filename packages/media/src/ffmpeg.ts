@@ -1,7 +1,15 @@
-import { open } from 'node:fs/promises';
+import { copyFile, mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ProbeStream, ProbeSummary } from '@relay/domain';
+import {
+  CAPTION_FONT_FAMILY,
+  CLIP_FPS,
+  clipFrameCount,
+  type ClipGeometry,
+  type ProbeStream,
+  type ProbeSummary,
+} from '@relay/domain';
 import { buildFeatures, RMS_HOP_MS, type MediaFeatures } from './analysis';
+import { isFastStartMp4 } from './isobmff';
 import { runTool, runToolOrThrow, ToolError, type RunLimits } from './process';
 
 /**
@@ -448,4 +456,470 @@ export async function extractFeatures(
     silence: `${starts}${ends}`,
     scene,
   });
+}
+
+// ----- Clip rendering -----------------------------------------------------------------
+
+/**
+ * Identifies the render recipe below. It is part of the render key, so bump it whenever the
+ * argv or the filter chain changes in a way that alters the picture or the sound.
+ */
+export const CLIP_RENDERER_VERSION = 'relay-clip@1';
+
+/** The value stored as `render_jobs.renderer_version`: the recipe plus the tool that ran it. */
+export function clipRendererVersion(toolVersion: string): string {
+  return `${CLIP_RENDERER_VERSION} (${toolVersion})`.slice(0, 120);
+}
+
+/** First line of `ffmpeg -version`, the encoder actually used for clips. */
+export async function ffmpegVersion(config: MediaToolConfig): Promise<string> {
+  const result = await runTool(
+    config.ffmpegPath,
+    ['-hide_banner', '-version'],
+    limits(config, { timeoutMs: 10_000 }),
+  );
+  return result.stdout.toString('utf8').split('\n')[0]?.trim().slice(0, 120) || 'unknown';
+}
+
+/** Side files of a caption render, relative to the scratch directory. */
+export const CLIP_CAPTIONS_FILE = 'captions.ass';
+export const CLIP_FONTS_DIR = 'fonts';
+const CLIP_FONTCONFIG_FILE = 'fonts.conf';
+
+/**
+ * Fontconfig is told about the scratch fonts directory and nothing else, so libass cannot
+ * reach a system font, neither for the caption family nor as a per-glyph fallback. Both
+ * paths are relative to the working directory; nothing is interpolated.
+ */
+const CLIP_FONTCONFIG = `<?xml version="1.0"?>
+<fontconfig>
+  <dir prefix="cwd">${CLIP_FONTS_DIR}</dir>
+  <cachedir prefix="cwd">fontcache</cachedir>
+</fontconfig>
+`;
+
+const FONT_FILE = /\.(?:otf|ttf)$/i;
+const MAX_STAGED_FONTS = 64;
+
+export type ClipRenderInputCode = 'fonts_missing' | 'captions_missing';
+
+/** A caption render was asked for without the files it needs. Not retryable as it stands. */
+export class ClipRenderInputError extends Error {
+  constructor(
+    readonly code: ClipRenderInputCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ClipRenderInputError';
+  }
+}
+
+async function fontFilesIn(dir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && FONT_FILE.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+    throw error;
+  }
+}
+
+/**
+ * Copy the caption font from the configured directory into `<scratchDir>/fonts`, where
+ * `renderClip` expects it. The upright regular and bold faces of the caption family are
+ * enough for the caption style; a directory that names its files differently is copied whole.
+ * Throws `ClipRenderInputError('fonts_missing')` when the directory has no font files.
+ */
+export async function stageCaptionFonts(input: {
+  fontsDir: string;
+  scratchDir: string;
+}): Promise<string[]> {
+  const available = await fontFilesIn(input.fontsDir);
+  const family = new RegExp(`^${CAPTION_FONT_FAMILY}-(?:Regular|Bold)\\.`, 'i');
+  const preferred = available.filter((name) => family.test(name));
+  const chosen = (preferred.length > 0 ? preferred : available).slice(0, MAX_STAGED_FONTS);
+  if (chosen.length === 0) {
+    throw new ClipRenderInputError(
+      'fonts_missing',
+      `No caption font files (.otf, .ttf) in ${input.fontsDir}; set RELAY_MEDIA_FONTS_DIR`,
+    );
+  }
+  const target = path.join(input.scratchDir, CLIP_FONTS_DIR);
+  await mkdir(target, { recursive: true });
+  for (const name of chosen)
+    await copyFile(path.join(input.fontsDir, name), path.join(target, name));
+  return chosen;
+}
+
+/** `seconds.micros` without going through a float. */
+function microsToSeconds(micros: number): string {
+  return `${Math.floor(micros / 1_000_000)}.${String(micros % 1_000_000).padStart(6, '0')}`;
+}
+
+/** ffprobe prints times as decimal seconds with six places; read them as whole microseconds. */
+function secondsToMicros(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(-?)(\d+)(?:\.(\d{1,6}))?\d*$/.exec(value.trim());
+  if (!match) return null;
+  const micros = Number(match[2]) * 1_000_000 + Number((match[3] ?? '').padEnd(6, '0'));
+  return Number.isSafeInteger(micros) ? (match[1] === '-' ? -micros : micros) : null;
+}
+
+async function probeEntries(
+  config: MediaToolConfig,
+  inputPath: string,
+  demuxer: string,
+  extra: string[],
+): Promise<{ format?: Record<string, unknown>; streams?: Array<Record<string, unknown>> }> {
+  const args = [
+    '-v',
+    'error',
+    '-hide_banner',
+    '-protocol_whitelist',
+    PROTOCOL_WHITELIST,
+    '-format_whitelist',
+    DEMUXER_WHITELIST,
+    '-f',
+    demuxer,
+    '-select_streams',
+    'v:0',
+    ...extra,
+    '-of',
+    'json',
+    '-i',
+    inputPath,
+  ];
+  const result = await runTool(
+    config.ffprobePath,
+    args,
+    limits(config, { timeoutMs: Math.min(config.timeoutSeconds * 1000, 120_000) }),
+  );
+  if (result.timedOut) throw new ToolError('ffprobe timed out', result);
+  if (result.code !== 0) {
+    throw new ToolError(
+      `ffprobe could not read the file: ${result.stderr.trim().slice(0, 200)}`,
+      result,
+    );
+  }
+  try {
+    return JSON.parse(result.stdout.toString('utf8')) as never;
+  } catch {
+    throw new ToolError('ffprobe returned malformed JSON', result);
+  }
+}
+
+/**
+ * How far the first video frame sits after the container start time, in microseconds.
+ * FFmpeg's `-ss` counts from the container start, which is the earliest stream: when audio
+ * leads (AAC priming, a shifted recording) the video timeline starts a little later, and a
+ * clip range is defined on the video timeline.
+ */
+async function videoStartOffsetMicros(
+  config: MediaToolConfig,
+  inputPath: string,
+  demuxer: string,
+): Promise<number> {
+  const json = await probeEntries(config, inputPath, demuxer, [
+    '-show_entries',
+    'format=start_time:stream=start_time',
+  ]);
+  const container = secondsToMicros(json.format?.start_time);
+  const video = secondsToMicros(json.streams?.[0]?.start_time);
+  if (container === null || video === null) return 0;
+  return Math.max(0, video - container);
+}
+
+/** Half an output frame, in microseconds. */
+const HALF_FRAME_MICROS = Math.round(1_000_000 / (2 * CLIP_FPS));
+/** How many times the last picture may repeat when the video track ends before the range. */
+const CLIP_TAIL_PAD_FRAMES = CLIP_FPS;
+const CLIP_AUDIO_BITRATE = '128k';
+
+export interface RenderClipInput {
+  inputPath: string;
+  demuxer: string;
+  outputPath: string;
+  /** Working directory of the encoder; holds `captions.ass` and `fonts/` for caption renders. */
+  scratchDir: string;
+  /** Range on the 0-based video timeline of the source: start inclusive, end exclusive. */
+  startMs: number;
+  endMs: number;
+  /** From `clipGeometry`, computed on display (rotated) dimensions. */
+  geometry: ClipGeometry;
+  hasAudio: boolean;
+  /** Burn in `<scratchDir>/captions.ass` using the fonts in `<scratchDir>/fonts`. */
+  captions: boolean;
+  maxOutputBytes: number;
+}
+
+function assertGeometry(g: ClipGeometry): void {
+  const even = (n: number) => Number.isSafeInteger(n) && n >= 2 && n % 2 === 0 && n <= 16384;
+  const offset = (n: number) => Number.isSafeInteger(n) && n >= 0 && n % 2 === 0;
+  const fill = g.scaleWidth >= g.outWidth && g.scaleHeight >= g.outHeight;
+  const fit = g.scaleWidth <= g.outWidth && g.scaleHeight <= g.outHeight;
+  if (
+    ![g.outWidth, g.outHeight, g.scaleWidth, g.scaleHeight].every(even) ||
+    ![g.cropX, g.cropY, g.padX, g.padY].every(offset) ||
+    !(fill || fit) ||
+    g.cropX + g.outWidth > Math.max(g.scaleWidth, g.outWidth) ||
+    g.cropY + g.outHeight > Math.max(g.scaleHeight, g.outHeight) ||
+    g.padX + g.scaleWidth > Math.max(g.scaleWidth, g.outWidth) ||
+    g.padY + g.scaleHeight > Math.max(g.scaleHeight, g.outHeight)
+  ) {
+    throw new RangeError('renderClip needs a geometry from clipGeometry');
+  }
+}
+
+/** The video chain. Every value is a number checked by `assertGeometry` or a constant. */
+function clipVideoFilter(g: ClipGeometry, captions: boolean, halfFrameLead: boolean): string {
+  const chain = [
+    // The input is normally opened half a frame before the first wanted grid point (see
+    // renderClip), so rounding down here is rounding to the nearest point of the source's
+    // 30 fps grid. At the very start of the source there is no lead and plain rounding to
+    // nearest does the same job. start_time=0 fills the first slots when the source frame
+    // rate is lower than the grid.
+    `fps=fps=${CLIP_FPS}:round=${halfFrameLead ? 'down' : 'near'}:start_time=0`,
+    // A video track that ends slightly before the container does still yields every frame.
+    `tpad=stop_mode=clone:stop=${CLIP_TAIL_PAD_FRAMES}`,
+    `scale=${g.scaleWidth}:${g.scaleHeight}`,
+  ];
+  if (g.scaleWidth > g.outWidth || g.scaleHeight > g.outHeight) {
+    chain.push(`crop=${g.outWidth}:${g.outHeight}:${g.cropX}:${g.cropY}`);
+  } else if (g.scaleWidth < g.outWidth || g.scaleHeight < g.outHeight) {
+    chain.push(`pad=${g.outWidth}:${g.outHeight}:${g.padX}:${g.padY}:color=black`);
+  }
+  chain.push('setsar=1');
+  if (captions) chain.push(`subtitles=filename=${CLIP_CAPTIONS_FILE}:fontsdir=${CLIP_FONTS_DIR}`);
+  chain.push('format=yuv420p');
+  return chain.join(',');
+}
+
+/**
+ * Render one clip: decode and re-encode `[startMs, endMs)` of the source into an H.264/AAC
+ * MP4 at a constant 30 fps, scaled and cropped or padded to `geometry`, optionally with
+ * burned-in captions. Never a stream copy, so the cut is frame-exact wherever the keyframes are.
+ *
+ * Which frames: output frame k is grid point `firstFrame + k` of the source's 30 fps
+ * timeline, where `firstFrame = ceil(startMs * 30 / 1000)` and the count is `clipFrameCount`,
+ * the same arithmetic the editor uses. The input is opened half a frame before the first grid
+ * point, so a source frame stamped a fraction of a millisecond early (Matroska rounds to
+ * whole milliseconds) is kept rather than cut, and the audio is moved by the same half frame
+ * so sound and picture stay aligned.
+ *
+ * The output is removed on any failure, including a render that hit `maxOutputBytes`.
+ */
+export async function renderClip(config: MediaToolConfig, input: RenderClipInput): Promise<void> {
+  const { startMs, endMs, geometry } = input;
+  const frames = clipFrameCount(startMs, endMs, CLIP_FPS);
+  assertGeometry(geometry);
+  if (!Number.isSafeInteger(input.maxOutputBytes) || input.maxOutputBytes < 1) {
+    throw new RangeError('renderClip needs a positive maxOutputBytes');
+  }
+  const scratchDir = path.resolve(input.scratchDir);
+  const inputPath = path.resolve(input.inputPath);
+  const outputPath = path.resolve(input.outputPath);
+
+  let env: Record<string, string> | undefined;
+  if (input.captions) {
+    if ((await fontFilesIn(path.join(scratchDir, CLIP_FONTS_DIR))).length === 0) {
+      throw new ClipRenderInputError(
+        'fonts_missing',
+        `Captions need the caption font in ${CLIP_FONTS_DIR}/ of the scratch directory`,
+      );
+    }
+    const captionFile = await stat(path.join(scratchDir, CLIP_CAPTIONS_FILE)).catch(() => null);
+    if (!captionFile?.isFile()) {
+      throw new ClipRenderInputError(
+        'captions_missing',
+        `Captions need ${CLIP_CAPTIONS_FILE} in the scratch directory`,
+      );
+    }
+    const fontconfig = path.join(scratchDir, CLIP_FONTCONFIG_FILE);
+    await writeFile(fontconfig, CLIP_FONTCONFIG);
+    env = { FONTCONFIG_FILE: fontconfig };
+  }
+
+  const firstFrame = Math.ceil((startMs * CLIP_FPS) / 1000);
+  // Nothing to lead into at the very start of the source.
+  const leadMicros = firstFrame === 0 ? 0 : HALF_FRAME_MICROS;
+  const seekMicros =
+    Math.round((firstFrame * 1_000_000) / CLIP_FPS) -
+    leadMicros +
+    (await videoStartOffsetMicros(config, inputPath, input.demuxer));
+
+  const audioChain = [
+    // Undo the half-frame lead for sound, then drop what now lies before the first picture.
+    ...(leadMicros > 0 ? [`asetpts=PTS-${leadMicros}/1000000/TB`, 'atrim=start=0'] : []),
+    // Fill gaps and a late start with silence so audio stays locked to the frame grid.
+    'aresample=async=1:first_pts=0',
+    // An audio track that ends inside or before the range is continued with silence up to
+    // -t, so a source with audio always yields a clip with an audio track of the full length.
+    'apad',
+  ].join(',');
+
+  const args = [
+    '-filter_threads',
+    '1',
+    // Input options. Accurate seek (the default when re-encoding) decodes from the previous
+    // keyframe and discards everything before the target. Decoder threads are capped like
+    // the encoder's: left alone they follow the core count, and so does the address space.
+    ...(seekMicros > 0 ? ['-ss', microsToSeconds(seekMicros)] : []),
+    '-threads',
+    String(config.threads),
+    ...COMMON_INPUT(input.demuxer, inputPath),
+    '-map',
+    '0:v:0',
+    ...(input.hasAudio ? ['-map', '0:a:0'] : ['-an']),
+    // Source tags (location, device, titles) do not belong in a derived clip.
+    '-map_metadata',
+    '-1',
+    '-map_chapters',
+    '-1',
+    '-t',
+    ((endMs - startMs) / 1000).toFixed(3),
+    // -t alone can admit one frame more than the grid holds; this is the exact count.
+    '-frames:v',
+    String(frames),
+    '-vf',
+    clipVideoFilter(geometry, input.captions, leadMicros > 0),
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    '20',
+    '-maxrate',
+    '8M',
+    '-bufsize',
+    '16M',
+    '-g',
+    String(CLIP_FPS * 2),
+    '-pix_fmt',
+    'yuv420p',
+    // The preset's own lookahead and reference count, pinned so memory does not move with a
+    // library update. Measured at 1080x1920 with two threads: about 280 MB resident and
+    // 1.0 GB of address space. Turning lookahead off saves 75 MB but costs about 45% more
+    // bits at the same CRF, so it stays on.
+    '-x264-params',
+    'rc-lookahead=10:ref=1',
+    ...(input.hasAudio
+      ? ['-af', audioChain, '-c:a', 'aac', '-b:a', CLIP_AUDIO_BITRATE, '-ac', '2', '-ar', '48000']
+      : []),
+    '-movflags',
+    '+faststart',
+    '-threads',
+    String(config.threads),
+    '-fs',
+    String(input.maxOutputBytes),
+    '-f',
+    'mp4',
+    '-y',
+    outputPath,
+  ];
+
+  try {
+    const result = await runToolOrThrow(
+      config.ffmpegPath,
+      args,
+      limits(config, {
+        maxFileBytes: input.maxOutputBytes + 1024 * 1024,
+        cpuSeconds: config.cpuSeconds ?? config.timeoutSeconds * Math.max(1, config.threads),
+      }),
+      { cwd: scratchDir, ...(env ? { env } : {}) },
+    );
+    // -fs makes FFmpeg stop writing and exit 0, which would leave a short but playable file.
+    const { size } = await stat(outputPath);
+    if (size >= input.maxOutputBytes) {
+      throw new ToolError(
+        `The rendered clip reached the ${input.maxOutputBytes} byte output limit`,
+        result,
+      );
+    }
+  } catch (error) {
+    await rm(outputPath, { force: true });
+    throw error;
+  }
+}
+
+export interface ClipOutputExpectation {
+  width: number;
+  height: number;
+  /** `clipFrameCount(startMs, endMs)`. */
+  frameCount: number;
+  /** Whether the source had audio; the clip has an AAC track exactly then. */
+  hasAudio: boolean;
+}
+
+/** A rendered clip is not what was asked for. Permanent: a retry would render the same file. */
+export class ClipVerificationError extends Error {
+  constructor(readonly problems: string[]) {
+    super(`Rendered clip failed verification: ${problems.join('; ')}`);
+    this.name = 'ClipVerificationError';
+  }
+}
+
+/**
+ * Check a rendered clip against the request before it is published as an asset: container
+ * layout, codecs, pixel format, exact size, exact frame count and audio presence. Returns the
+ * probe of the output; throws `ClipVerificationError` listing every mismatch.
+ */
+export async function verifyClipOutput(
+  config: MediaToolConfig,
+  outputPath: string,
+  expected: ClipOutputExpectation,
+): Promise<ProbeSummary> {
+  const problems: string[] = [];
+  if (!(await isFastStartMp4(outputPath))) problems.push('moov does not precede mdat');
+
+  const probe = await probeFile(config, outputPath, 'mov');
+  if (probe.encrypted) problems.push('output is marked encrypted');
+  const video = probe.streams.filter((s) => s.type === 'video');
+  const audio = probe.streams.filter((s) => s.type === 'audio');
+  const other = probe.streams.filter((s) => s.type !== 'video' && s.type !== 'audio');
+  if (other.length > 0) problems.push(`unexpected ${other.map((s) => s.type).join(', ')} stream`);
+
+  const v = video[0];
+  if (!v || video.length !== 1) {
+    problems.push(`expected one video stream, found ${video.length}`);
+  } else {
+    if (v.codec !== 'h264') problems.push(`video codec is ${v.codec ?? 'unknown'}, not h264`);
+    if (v.pixFmt !== 'yuv420p') problems.push(`pixel format is ${v.pixFmt ?? 'unknown'}`);
+    if (v.width !== expected.width || v.height !== expected.height) {
+      problems.push(
+        `size is ${v.width ?? '?'}x${v.height ?? '?'}, expected ${expected.width}x${expected.height}`,
+      );
+    }
+    if (v.rotation !== 0) problems.push(`output carries a ${v.rotation} degree rotation`);
+    if (v.avgFrameRate !== CLIP_FPS) {
+      problems.push(`frame rate is ${v.avgFrameRate ?? 'unknown'}, expected ${CLIP_FPS}`);
+    }
+    // The count in the index and the packets actually present must both match: a truncated
+    // file can keep a correct-looking index.
+    const counted = await probeEntries(config, outputPath, 'mov', [
+      '-count_packets',
+      '-show_entries',
+      'stream=nb_frames,nb_read_packets',
+    ]);
+    const indexed = num(counted.streams?.[0]?.nb_frames);
+    const packets = num(counted.streams?.[0]?.nb_read_packets);
+    if (indexed !== expected.frameCount || packets !== expected.frameCount) {
+      problems.push(
+        `frame count is ${indexed ?? '?'} (index) / ${packets ?? '?'} (packets), expected ${expected.frameCount}`,
+      );
+    }
+  }
+
+  if (expected.hasAudio) {
+    if (audio.length !== 1) problems.push(`expected one audio stream, found ${audio.length}`);
+    else if (audio[0]?.codec !== 'aac') problems.push(`audio codec is ${audio[0]?.codec}, not aac`);
+  } else if (audio.length > 0) {
+    problems.push('output has audio but the source had none');
+  }
+
+  if (problems.length > 0) throw new ClipVerificationError(problems);
+  return probe;
 }
